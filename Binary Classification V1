@@ -1,0 +1,3069 @@
+{
+ "cells": [
+  {
+   "cell_type": "code",
+   "execution_count": 1,
+   "id": "7f972f34",
+   "metadata": {
+    "_cell_guid": "b1076dfc-b9ad-4769-8c92-a6c4dae69d19",
+    "_uuid": "8f2839f25d086af736a60e9eeb907d3b93b6e0e5",
+    "execution": {
+     "iopub.execute_input": "2024-07-29T18:31:41.809150Z",
+     "iopub.status.busy": "2024-07-29T18:31:41.808862Z",
+     "iopub.status.idle": "2024-07-29T18:31:48.077572Z",
+     "shell.execute_reply": "2024-07-29T18:31:48.076575Z"
+    },
+    "papermill": {
+     "duration": 6.284497,
+     "end_time": "2024-07-29T18:31:48.079747",
+     "exception": false,
+     "start_time": "2024-07-29T18:31:41.795250",
+     "status": "completed"
+    },
+    "tags": []
+   },
+   "outputs": [
+    {
+     "name": "stdout",
+     "output_type": "stream",
+     "text": [
+      "/kaggle/input/playground-series-s4e7/sample_submission.csv\n",
+      "/kaggle/input/playground-series-s4e7/train.csv\n",
+      "/kaggle/input/playground-series-s4e7/test.csv\n"
+     ]
+    }
+   ],
+   "source": [
+    "# This Python 3 environment comes with many helpful analytics libraries installed\n",
+    "# It is defined by the kaggle/python Docker image: https://github.com/kaggle/docker-python\n",
+    "# For example, here's several helpful packages to load\n",
+    "\n",
+    "import numpy as np # linear algebra\n",
+    "import pandas as pd # data processing, CSV file I/O (e.g. pd.read_csv)\n",
+    "import seaborn as sns\n",
+    "import matplotlib.pyplot as plt\n",
+    "import torch\n",
+    "from torch.utils.data import Dataset, DataLoader\n",
+    "from torch import nn\n",
+    "import imblearn\n",
+    "from imblearn.over_sampling import SMOTE\n",
+    "from sklearn.preprocessing import StandardScaler, MinMaxScaler\n",
+    "\n",
+    "\n",
+    "# Input data files are available in the read-only \"../input/\" directory\n",
+    "# For example, running this (by clicking run or pressing Shift+Enter) will list all files under the input directory\n",
+    "\n",
+    "import os\n",
+    "for dirname, _, filenames in os.walk('/kaggle/input'):\n",
+    "    for filename in filenames:\n",
+    "        print(os.path.join(dirname, filename))\n",
+    "\n",
+    "# You can write up to 20GB to the current directory (/kaggle/working/) that gets preserved as output when you create a version using \"Save & Run All\" \n",
+    "# You can also write temporary files to /kaggle/temp/, but they won't be saved outside of the current session"
+   ]
+  },
+  {
+   "cell_type": "code",
+   "execution_count": 2,
+   "id": "0734f81a",
+   "metadata": {
+    "execution": {
+     "iopub.execute_input": "2024-07-29T18:31:48.105512Z",
+     "iopub.status.busy": "2024-07-29T18:31:48.105055Z",
+     "iopub.status.idle": "2024-07-29T18:31:48.109789Z",
+     "shell.execute_reply": "2024-07-29T18:31:48.108941Z"
+    },
+    "papermill": {
+     "duration": 0.020252,
+     "end_time": "2024-07-29T18:31:48.112071",
+     "exception": false,
+     "start_time": "2024-07-29T18:31:48.091819",
+     "status": "completed"
+    },
+    "tags": []
+   },
+   "outputs": [
+    {
+     "name": "stdout",
+     "output_type": "stream",
+     "text": [
+      "cuda\n"
+     ]
+    }
+   ],
+   "source": [
+    "device = \"cuda\" if torch.cuda.is_available else \"cpu\"\n",
+    "print(device)"
+   ]
+  },
+  {
+   "cell_type": "code",
+   "execution_count": 3,
+   "id": "9ea438cf",
+   "metadata": {
+    "execution": {
+     "iopub.execute_input": "2024-07-29T18:31:48.136811Z",
+     "iopub.status.busy": "2024-07-29T18:31:48.136540Z",
+     "iopub.status.idle": "2024-07-29T18:32:21.090375Z",
+     "shell.execute_reply": "2024-07-29T18:32:21.089563Z"
+    },
+    "papermill": {
+     "duration": 32.968607,
+     "end_time": "2024-07-29T18:32:21.092682",
+     "exception": false,
+     "start_time": "2024-07-29T18:31:48.124075",
+     "status": "completed"
+    },
+    "tags": []
+   },
+   "outputs": [],
+   "source": [
+    "df_train = pd.read_csv(r'/kaggle/input/playground-series-s4e7/train.csv')\n",
+    "df_test = pd.read_csv(r'/kaggle/input/playground-series-s4e7/test.csv')"
+   ]
+  },
+  {
+   "cell_type": "markdown",
+   "id": "40d554e7",
+   "metadata": {
+    "papermill": {
+     "duration": 0.012513,
+     "end_time": "2024-07-29T18:32:21.117196",
+     "exception": false,
+     "start_time": "2024-07-29T18:32:21.104683",
+     "status": "completed"
+    },
+    "tags": []
+   },
+   "source": [
+    "# Checkin duplicate and null values"
+   ]
+  },
+  {
+   "cell_type": "code",
+   "execution_count": 4,
+   "id": "4e16086e",
+   "metadata": {
+    "execution": {
+     "iopub.execute_input": "2024-07-29T18:32:21.141556Z",
+     "iopub.status.busy": "2024-07-29T18:32:21.141275Z",
+     "iopub.status.idle": "2024-07-29T18:32:36.696151Z",
+     "shell.execute_reply": "2024-07-29T18:32:36.695220Z"
+    },
+    "papermill": {
+     "duration": 15.569736,
+     "end_time": "2024-07-29T18:32:36.698423",
+     "exception": false,
+     "start_time": "2024-07-29T18:32:21.128687",
+     "status": "completed"
+    },
+    "tags": []
+   },
+   "outputs": [
+    {
+     "data": {
+      "text/plain": [
+       "(11504798, 12)"
+      ]
+     },
+     "execution_count": 4,
+     "metadata": {},
+     "output_type": "execute_result"
+    }
+   ],
+   "source": [
+    "df_train.duplicated().sum()\n",
+    "df_train.drop_duplicates(inplace=True)\n",
+    "df_train.shape\n"
+   ]
+  },
+  {
+   "cell_type": "code",
+   "execution_count": 5,
+   "id": "7c916a4f",
+   "metadata": {
+    "execution": {
+     "iopub.execute_input": "2024-07-29T18:32:36.723455Z",
+     "iopub.status.busy": "2024-07-29T18:32:36.723133Z",
+     "iopub.status.idle": "2024-07-29T18:32:47.086064Z",
+     "shell.execute_reply": "2024-07-29T18:32:47.085170Z"
+    },
+    "papermill": {
+     "duration": 10.377647,
+     "end_time": "2024-07-29T18:32:47.088124",
+     "exception": false,
+     "start_time": "2024-07-29T18:32:36.710477",
+     "status": "completed"
+    },
+    "tags": []
+   },
+   "outputs": [
+    {
+     "data": {
+      "text/plain": [
+       "(7669866, 11)"
+      ]
+     },
+     "execution_count": 5,
+     "metadata": {},
+     "output_type": "execute_result"
+    }
+   ],
+   "source": [
+    "df_test.duplicated().sum()\n",
+    "df_test.drop_duplicates(inplace=True)\n",
+    "df_test.shape\n"
+   ]
+  },
+  {
+   "cell_type": "code",
+   "execution_count": 6,
+   "id": "5a5cc7cd",
+   "metadata": {
+    "execution": {
+     "iopub.execute_input": "2024-07-29T18:32:47.122844Z",
+     "iopub.status.busy": "2024-07-29T18:32:47.122035Z",
+     "iopub.status.idle": "2024-07-29T18:32:50.346377Z",
+     "shell.execute_reply": "2024-07-29T18:32:50.345479Z"
+    },
+    "papermill": {
+     "duration": 3.24446,
+     "end_time": "2024-07-29T18:32:50.348590",
+     "exception": false,
+     "start_time": "2024-07-29T18:32:47.104130",
+     "status": "completed"
+    },
+    "tags": []
+   },
+   "outputs": [
+    {
+     "data": {
+      "text/plain": [
+       "id                      0\n",
+       "Gender                  0\n",
+       "Age                     0\n",
+       "Driving_License         0\n",
+       "Region_Code             0\n",
+       "Previously_Insured      0\n",
+       "Vehicle_Age             0\n",
+       "Vehicle_Damage          0\n",
+       "Annual_Premium          0\n",
+       "Policy_Sales_Channel    0\n",
+       "Vintage                 0\n",
+       "Response                0\n",
+       "dtype: int64"
+      ]
+     },
+     "execution_count": 6,
+     "metadata": {},
+     "output_type": "execute_result"
+    }
+   ],
+   "source": [
+    "missing_values = df_train.isnull().sum()\n",
+    "missing_values"
+   ]
+  },
+  {
+   "cell_type": "code",
+   "execution_count": 7,
+   "id": "36615852",
+   "metadata": {
+    "execution": {
+     "iopub.execute_input": "2024-07-29T18:32:50.373938Z",
+     "iopub.status.busy": "2024-07-29T18:32:50.373675Z",
+     "iopub.status.idle": "2024-07-29T18:32:52.522107Z",
+     "shell.execute_reply": "2024-07-29T18:32:52.521229Z"
+    },
+    "papermill": {
+     "duration": 2.163505,
+     "end_time": "2024-07-29T18:32:52.524337",
+     "exception": false,
+     "start_time": "2024-07-29T18:32:50.360832",
+     "status": "completed"
+    },
+    "tags": []
+   },
+   "outputs": [
+    {
+     "data": {
+      "text/plain": [
+       "id                      0\n",
+       "Gender                  0\n",
+       "Age                     0\n",
+       "Driving_License         0\n",
+       "Region_Code             0\n",
+       "Previously_Insured      0\n",
+       "Vehicle_Age             0\n",
+       "Vehicle_Damage          0\n",
+       "Annual_Premium          0\n",
+       "Policy_Sales_Channel    0\n",
+       "Vintage                 0\n",
+       "dtype: int64"
+      ]
+     },
+     "execution_count": 7,
+     "metadata": {},
+     "output_type": "execute_result"
+    }
+   ],
+   "source": [
+    "missing_values = df_test.isnull().sum()\n",
+    "missing_values"
+   ]
+  },
+  {
+   "cell_type": "code",
+   "execution_count": 8,
+   "id": "0b2f0a6f",
+   "metadata": {
+    "execution": {
+     "iopub.execute_input": "2024-07-29T18:32:52.551451Z",
+     "iopub.status.busy": "2024-07-29T18:32:52.551128Z",
+     "iopub.status.idle": "2024-07-29T18:32:52.814167Z",
+     "shell.execute_reply": "2024-07-29T18:32:52.812866Z"
+    },
+    "papermill": {
+     "duration": 0.28012,
+     "end_time": "2024-07-29T18:32:52.817804",
+     "exception": false,
+     "start_time": "2024-07-29T18:32:52.537684",
+     "status": "completed"
+    },
+    "tags": []
+   },
+   "outputs": [
+    {
+     "data": {
+      "text/plain": [
+       "Text(0.5, 1.0, 'Checking Imbalance in Training Data Or Response')"
+      ]
+     },
+     "execution_count": 8,
+     "metadata": {},
+     "output_type": "execute_result"
+    },
+    {
+     "data": {
+      "text/plain": [
+       "<Figure size 600x600 with 0 Axes>"
+      ]
+     },
+     "metadata": {},
+     "output_type": "display_data"
+    },
+    {
+     "data": {
+      "image/png": "iVBORw0KGgoAAAANSUhEUgAAAbIAAAGbCAYAAACh0BXiAAAAOXRFWHRTb2Z0d2FyZQBNYXRwbG90bGliIHZlcnNpb24zLjcuNSwgaHR0cHM6Ly9tYXRwbG90bGliLm9yZy/xnp5ZAAAACXBIWXMAAA9hAAAPYQGoP6dpAABAsklEQVR4nO3dd3hTZcMG8DtdSZtOSheltFBGgaIgIMgGQUCGCDJUZKiAijgAFcWXpYLieN0DRWSIgy0ge6goe8iG0snq3rtNnu8P3uajNG3TNu2Tk9y/6+JSTtOTm5Nx55zz5DkqIYQAERGRQtnJDkBERFQTLDIiIlI0FhkRESkai4yIiBSNRUZERIrGIiMiIkVjkRERkaKxyIiISNFYZEREpGi1WmQqlQrPP/98bd5FGTExMVCpVPjggw8qvN3+/fuhUqmwf//+uglWy3744QeoVCocO3bMbOucMGECQkJCzLY+WXr16oVevXrJjlElNdn28+bNg0qlMm8gIgtWrSKLjIzElClT0KRJE2g0Gri7u6Nr16745JNPkJeXZ+6MVqc2SofqhkqlMumPtXxAqqoJEyaU2g6urq5o0qQJHnnkEaxbtw56vb7a6169ejU+/vhj84W9jRACK1euRI8ePeDp6QkXFxe0adMGCxYsQE5OTo3Xf+d2UavVaN68OebMmYP8/Hwz/Atsm0NVf2Hr1q0YOXIk1Go1xo0bh/DwcBQWFuLAgQN45ZVXcO7cOSxZsqQ2sppVjx49kJeXBycnJ9lRqJbt3LnTbOtauXJlqb+vWLECu3btKrO8ZcuWNbqfb7/9ttpv+m+++SZmzZpVo/uvCbVaje+++w4AkJeXh9jYWGzevBmPPPIIevXqhU2bNsHd3b3K6129ejXOnj2Ll156yax5dTodHnvsMfz666/o3r075s2bBxcXF/z111+YP38+1qxZg927d8PPz69G93P7dsnIyMCmTZvw1ltvITIyEj/++KM5/im2S1RBVFSUcHV1FWFhYeLGjRtlfh4RESE+/vhjw98BiKlTp1blLmosOjpaABDvv/9+nd5vVSxbtkwAEEePHrXodY4fP14EBwebbX3WaOrUqcKUl1FOTk4dpJFv/PjxQqvVGv3ZokWLBAAxatSoaq170KBBtfJ8XLhwoQAgZs6cWeZnv/32m7CzsxMDBgyocB16vV7k5uaW+3Nj20Wv14vOnTsLlUol4uPjqxeehBBCVOnQ4uLFi5GdnY2lS5ciICCgzM+bNm2KF198sczyjRs3Ijw8HGq1Gq1bt8b27dvL3Ob69et48skn4efnZ7jd999/X+Z2+fn5mDdvHpo3bw6NRoOAgAAMHz4ckZGR5eYWQmDy5MlwcnLC+vXrARg/R9arVy+Eh4fj/Pnz6N27N1xcXBAYGIjFixeXWWdsbCyGDh0KrVYLX19fvPzyy9ixY0e1DytNmDABrq6uiIuLw+DBg+Hq6orAwEB88cUXAIAzZ86gT58+0Gq1CA4OxurVq42uJzc3F1OmTIG3tzfc3d0xbtw4pKWllbrNpk2bMGjQIDRo0ABqtRqhoaF46623oNPpKs35wQcfoEuXLvD29oazszPat2+PtWvXlrldyflRUx/7p556ypCncePGePbZZ1FYWGi4TXp6Ol566SUEBQVBrVajadOmeO+990zaa7nzHFnJY//rr7/inXfeQcOGDaHRaHD//ffjypUrla7PlPsLDw/H8ePH0aNHD7i4uOCNN94AYPq2v/Mc2e3nfpcsWYLQ0FCo1Wp07NgRR48eLfW7xs6RVeXx2L9/Pzp06ACNRoPQ0FB88803ZjnvNmvWLDzwwANYs2YNLl++bFhuyjbp1asXtm7ditjYWMPhuZLtU1hYiDlz5qB9+/bw8PCAVqtF9+7dsW/fvkoz5eXl4f3330fz5s2xaNGiMj8fMmQIxo8fj+3bt+PQoUOG5SEhIRg8eDB27NiBDh06wNnZGd98802VtodKpUK3bt0ghEBUVFSpn23btg3du3eHVquFm5sbBg0ahHPnzpW6TXx8PCZOnIiGDRtCrVYjICAADz30EGJiYsrk3LlzJ9q2bQuNRoNWrVoZ3gdvFxUVhZEjR6JevXpwcXFB586dsXXr1lK3qcprJyIiAiNGjIC/vz80Gg0aNmyIMWPGICMjo9TtVq1ahfbt28PZ2Rn16tXDmDFjcPXq1SptyyodWty8eTOaNGmCLl26mPw7Bw4cwPr16/Hcc8/Bzc0Nn376KUaMGIG4uDh4e3sDABISEtC5c2fDi83Hxwfbtm3DU089hczMTMOhBJ1Oh8GDB2PPnj0YM2YMXnzxRWRlZWHXrl04e/YsQkNDy9y/TqfDk08+iV9++QUbNmzAoEGDKsyblpaGAQMGYPjw4Rg1ahTWrl2L1157DW3atMHAgQMBADk5OejTpw9u3ryJF198Ef7+/li9erVJL5yK6HQ6DBw4ED169MDixYvx448/4vnnn4dWq8Xs2bPx+OOPY/jw4fj6668xbtw43HfffWjcuHGpdTz//PPw9PTEvHnzcOnSJXz11VeIjY01PAGBW+foXF1dMX36dLi6umLv3r2YM2cOMjMz8f7771eY8ZNPPsHQoUPx+OOPo7CwED///DNGjhyJLVu2lNm2pjz2N27cwL333ov09HRMnjwZYWFhuH79OtauXYvc3Fw4OTkhNzcXPXv2xPXr1zFlyhQ0atQI//zzD15//XXcvHmz2udN3n33XdjZ2WHmzJnIyMjA4sWL8fjjj+Pw4cPVWt/tUlJSMHDgQIwZMwZjx441HJaqybYHbh1ey8rKwpQpU6BSqbB48WIMHz4cUVFRcHR0rPB3TXk8Tp48iQEDBiAgIADz58+HTqfDggUL4OPjU+NtAgBPPPEEdu7ciV27dqF58+YATNsms2fPRkZGBq5du4b//ve/AABXV1cAQGZmJr777js8+uijmDRpErKysrB06VL0798fR44cQdu2bSvcJmlpaXjxxRfh4GD87XDcuHFYtmwZtmzZgs6dOxuWX7p0CY8++iimTJmCSZMmoUWLFlXeHiWl4+XlZVi2cuVKjB8/Hv3798d7772H3NxcfPXVV+jWrRtOnjxpKPARI0bg3LlzmDZtGkJCQpCYmIhdu3YhLi6u1IegiIgIjB49Gs888wzGjx+PZcuWYeTIkdi+fTv69esH4NZ7cJcuXZCbm4sXXngB3t7eWL58OYYOHYq1a9fi4YcfLpW7stdOYWEh+vfvj4KCAkybNg3+/v64fv06tmzZgvT0dHh4eAAA3nnnHfznP//BqFGj8PTTTyMpKQmfffYZevTogZMnT8LT09O0DWnqrltGRoYAIB566CGTd/cACCcnJ3HlyhXDsn///VcAEJ999plh2VNPPSUCAgJEcnJyqd8fM2aM8PDwMOyyf//99wKA+Oijj8rcl16vF0KUPrRYVFQkRo8eLZydncWOHTtK3X7fvn0CgNi3b59hWc+ePQUAsWLFCsOygoIC4e/vL0aMGGFY9uGHHwoAYuPGjYZleXl5IiwsrMw6jTF2GHD8+PECgFi4cKFhWVpamnB2dhYqlUr8/PPPhuUXL14UAMTcuXPLrLN9+/aisLDQsHzx4sUCgNi0aZNhmbFDIFOmTBEuLi4iPz+/VKY7D+Xc+buFhYUiPDxc9OnTp9RyUx/7cePGCTs7O6OHREse07feektotVpx+fLlUj+fNWuWsLe3F3FxcWV+93Y9e/YUPXv2NPy95LFv2bKlKCgoMCz/5JNPBABx5syZCtd3O2OHFkueR19//XWZ21d325c8r729vUVqaqph+aZNmwQAsXnzZsOyuXPnlslk6uMxZMgQ4eLiIq5fv25YFhERIRwcHEw6hFrRoUUhhDh58qQAIF5++WXDMlO3SXmHFouLi0s9jkLceu34+fmJJ598ssK8H3/8sQAgNmzYUO5tUlNTBQAxfPhww7Lg4GABQGzfvr3C9Zco2S5JSUkiKSlJXLlyRXzwwQdCpVKJ8PBww3M9KytLeHp6ikmTJpX6/fj4eOHh4WFYnpaWZtIplJKc69atMyzLyMgQAQEBol27doZlL730kgAg/vrrL8OyrKws0bhxYxESEiJ0Op0QwvTXTsnjvGbNmnKzxcTECHt7e/HOO++UWn7mzBnh4OBQZnlFTD60mJmZCQBwc3Mz9VcAAH379i21p3TXXXfB3d3dsCsthMC6deswZMgQCCGQnJxs+NO/f39kZGTgxIkTAIB169ahfv36mDZtWpn7ufOwR2FhoWFP4ffff8cDDzxgUl5XV1eMHTvW8HcnJyfce++9pXb9t2/fjsDAQAwdOtSwTKPRYNKkSSbdR0Wefvppw/97enqiRYsW0Gq1GDVqlGF5ixYt4OnpWeZwBABMnjy51CfzZ599Fg4ODvj9998Ny5ydnQ3/n5WVheTkZHTv3h25ubm4ePFihflu/920tDRkZGSge/fuhsfodpU99nq9Hhs3bsSQIUPQoUOHMr9f8piuWbMG3bt3h5eXV6nnR9++faHT6fDnn39WmLk8EydOLDXYp3v37gBgdLtWlVqtxsSJE8ssr8m2B4DRo0eX+vRelcyVPR46nQ67d+/GsGHD0KBBA8PtmjZtajgaUVMle1FZWVmGZTXdJvb29obHUa/XIzU1FcXFxejQoYPR5+XtSnJU9L5W8rOS98ASjRs3Rv/+/SvNVyInJwc+Pj7w8fFB06ZNMXPmTHTt2hWbNm0yPNd37dqF9PR0PProo6We6/b29ujUqZPhqI+zszOcnJywf//+MqcO7tSgQYNSe1QlpxxOnjyJ+Ph4AMDvv/+Oe++9F926dTPcztXVFZMnT0ZMTAzOnz9fap2VvXZK9rh27NiB3Nxco7nWr18PvV6PUaNGlfq3+vv7o1mzZlU6wmXyocWSUUa3PwFN0ahRozLLvLy8DBs/KSkJ6enpWLJkSbmjHRMTEwHcGvbfokWLcg8B3G7RokXIzs7Gtm3bqvQdooYNG5YpRS8vL5w+fdrw99jYWISGhpa5XdOmTU2+H2M0Gk2ZQzgeHh5GM3l4eBh9Ajdr1qzU311dXREQEFDquPm5c+fw5ptvYu/evWVenHcev77Tli1b8Pbbb+PUqVMoKCgwLDd2/sSUxz4zMxPh4eEV3mdERAROnz5d7uGtkudHVd2Zr6QgKntjMEVgYKDREbE12fZAzTJX9ngkJiYiLy/P6PO4ps/tEtnZ2QBKF0dNtwkALF++HB9++CEuXryIoqIiw/I7D73fqSRHRe9r5ZVdZeu+k0ajwebNmwEA165dw+LFi5GYmFiqyCMiIgAAffr0MbqOkvdhtVqN9957DzNmzICfnx86d+6MwYMHY9y4cfD39y/1O02bNi3z+iw5rBsTEwN/f3/ExsaiU6dOZe6vZPRtbGxsqddpZc/Dxo0bY/r06fjoo4/w448/onv37hg6dCjGjh1rKLmIiAgIIcq8Z5Wo7FD57apUZA0aNMDZs2dNXjlw69OSMUIIADCcrB87dizGjx9v9LZ33XVXle4TAPr374/t27dj8eLF6NWrFzQajVny1qby7tucmdLT09GzZ0+4u7tjwYIFCA0NhUajwYkTJ/Daa69VOHjir7/+wtChQ9GjRw98+eWXCAgIgKOjI5YtW2Z08Im5cuv1evTr1w+vvvqq0Z+XvCirqjYf69vfnErUZNubI7PM53aJkvePkmI0xzZZtWoVJkyYgGHDhuGVV16Br68v7O3tsWjRogoHgQH//0Z9+vRpDBs2zOhtSj7EtmrVqtRyY49xRezt7dG3b1/D3/v374+wsDBMmTIFv/32G4D/fz9cuXJlmUICUOpD/EsvvYQhQ4Zg48aN2LFjB/7zn/9g0aJF2Lt3L9q1a1elbFVlynPpww8/xIQJE7Bp0ybs3LkTL7zwAhYtWoRDhw6hYcOG0Ov1UKlU2LZtm9H1ley9m6JKgz0GDx6MJUuW4ODBg7jvvvuq8qvl8vHxgZubG3Q6XakH2ZjQ0FAcPnwYRUVFlbZ1586d8cwzz2Dw4MEYOXIkNmzYYNKenCmCg4Nx/vx5CCFKfdIxx4i3moqIiEDv3r0Nf8/OzsbNmzfx4IMPArg16iglJQXr169Hjx49DLeLjo6udN3r1q2DRqPBjh07oFarDcuXLVtWraw+Pj5wd3ev9MNRaGgosrOzK31+WLqabPu64OvrC41GY/R5bK7n9sqVK6FSqQyDDKqyTcobNbl27Vo0adIE69evL3WbuXPnVpqnW7du8PT0xOrVqzF79myjb6grVqwAcOv9z5wCAgLw8ssvY/78+Th06BA6d+5sOPTr6+tr0vM9NDQUM2bMwIwZMxAREYG2bdviww8/xKpVqwy3uXLlSpn3qpJRoyWDQoKDg3Hp0qUy6y85tBscHFytf2ObNm3Qpk0bvPnmm/jnn3/QtWtXfP3113j77bcRGhoKIQQaN25c7Q+jJao0/P7VV1+FVqvF008/jYSEhDI/j4yMxCeffFKlAPb29hgxYgTWrVtn9A0tKSnJ8P8jRoxAcnIyPv/88zK3M/apsm/fvvj555+xfft2PPHEEzWaVeB2/fv3x/Xr1w2fooBbXwv49ttvzbL+mliyZEmpQytfffUViouLDec4Sl6ot2+vwsJCfPnll5Wu297eHiqVqtSw6JiYGGzcuLFaWe3s7DBs2DBs3rzZ6CwnJRlHjRqFgwcPYseOHWVuk56ejuLi4mrdf12rybavCyV7DBs3bsSNGzcMy69cuYJt27bVeP3vvvsudu7cidGjRxsOJ1Vlm2i1WqOHGo2t4/Dhwzh48GClmVxcXDBz5kxcunQJs2fPLvPzrVu34ocffkD//v1LjVg0l2nTpsHFxQXvvvsugFvvLe7u7li4cGGp13GJkvfD3NzcMjOChIaGws3NrdQhf+DWyOANGzYY/p6ZmYkVK1agbdu2hr2+Bx98EEeOHCm1zXJycrBkyRKEhISU2RutTGZmZpnXZZs2bWBnZ2fIN3z4cNjb22P+/Pll3r+FEEhJSTH5/qq0ixIaGorVq1dj9OjRaNmyZamZPf755x+sWbMGEyZMqMoqAdx6gu/btw+dOnXCpEmT0KpVK6SmpuLEiRPYvXs3UlNTAdwaBrtixQpMnz4dR44cQffu3ZGTk4Pdu3fjueeew0MPPVRm3cOGDcOyZcswbtw4uLu7V/m7HsZMmTIFn3/+OR599FG8+OKLCAgIwI8//mg4fClznrvCwkLcf//9GDVqFC5duoQvv/wS3bp1MwxM6dKlC7y8vDB+/Hi88MILUKlUWLlypUmHlwYNGoSPPvoIAwYMwGOPPYbExER88cUXaNq0aalziFWxcOFC7Ny5Ez179sTkyZPRsmVL3Lx5E2vWrMGBAwfg6emJV155Bb/99hsGDx6MCRMmoH379sjJycGZM2ewdu1axMTEoH79+tW6/7pUk21fV+bNm4edO3eia9euePbZZ6HT6fD5558jPDwcp06dMmkdxcXFhj2C/Px8xMbG4rfffsPp06fRu3fvUufCq7JN2rdvj19++QXTp09Hx44d4erqiiFDhmDw4MFYv349Hn74YQwaNAjR0dH4+uuv0apVK8M5uYrMmjULJ0+exHvvvYeDBw9ixIgRcHZ2xoEDB7Bq1Sq0bNkSy5cvN20DVpG3tzcmTpyIL7/8EhcuXEDLli3x1Vdf4YknnsA999yDMWPGwMfHB3Fxcdi6dSu6du2Kzz//HJcvXza8zlu1agUHBwds2LABCQkJGDNmTKn7aN68OZ566ikcPXoUfn5++P7775GQkFDqSMqsWbPw008/YeDAgXjhhRdQr149LF++HNHR0Vi3bh3s7Ko2m+HevXvx/PPPY+TIkWjevDmKi4uxcuVKw44LcKtP3n77bbz++uuIiYnBsGHD4ObmhujoaGzYsAGTJ0/GzJkzTbtDk8c33uby5cti0qRJIiQkRDg5OQk3NzfRtWtX8dlnn5UaLotyZvYIDg4W48ePL7UsISFBTJ06VQQFBQlHR0fh7+8v7r//frFkyZJSt8vNzRWzZ88WjRs3NtzukUceEZGRkUKI8mf2+PLLL0t9e7+84fetW7cuk9fYMPSoqCgxaNAg4ezsLHx8fMSMGTPEunXrBABx6NChCrdfecPvjQ1bLi9TcHCwGDRoUJl1/vHHH2Ly5MnCy8tLuLq6iscff1ykpKSU+t2///5bdO7cWTg7O4sGDRqIV199VezYsaPM9jD27166dKlo1qyZUKvVIiwsTCxbtqzc4d6mPvaxsbFi3LhxwsfHR6jVatGkSRMxderUUsN7s7KyxOuvvy6aNm0qnJycRP369UWXLl3EBx98UOrrBsaUN/z+zqHBJc+dZcuWVbi+25U3/N7YYyZE9bd9RTPW4I6vYtT08dizZ49o166dcHJyEqGhoeK7774TM2bMEBqNppyt8P9KvkZS8sfFxUWEhISIESNGiLVr1xqGcVdnm2RnZ4vHHntMeHp6CgCG7aPX68XChQtFcHCwUKvVol27dmLLli1VmplGp9OJZcuWia5duwp3d3eh0WhE69atxfz580V2drbR7Xb768+U7VLe1xIiIyOFvb19qcdh3759on///sLDw0NoNBoRGhoqJkyYII4dOyaEECI5OVlMnTpVhIWFCa1WKzw8PESnTp3Er7/+ajTnjh07xF133WV43RobFh8ZGSkeeeQR4enpKTQajbj33nvFli1bSt3G1NdOVFSUePLJJ0VoaKjQaDSiXr16onfv3mL37t1l7nfdunWiW7duQqvVCq1WK8LCwsTUqVPFpUuXKt2uJVRCWNDHQYX7+OOP8fLLL+PatWsIDAyUHYfIbIYNG4Zz584ZRtWRMoSEhCA8PBxbtmyRHaVW8Xpk1XTnLP/5+fn45ptv0KxZM5YYKdqdz+2IiAj8/vvvirsUDtkO8wzjs0HDhw9Ho0aN0LZtW2RkZGDVqlW4ePEiZ7EmxWvSpAkmTJiAJk2aIDY2Fl999RWcnJzK/foDkWwssmrq378/vvvuO/z444/Q6XRo1aoVfv75Z4wePVp2NKIaGTBgAH766SfEx8dDrVbjvvvuw8KFC8v94iqRbDxHRkREisZzZEREpGgsMiIiUjQWGRERKRqLjIiIFI1FRkREisYiIyIiRWORERGRorHIiIhI0VhkRESkaCwyIiJSNBYZEREpGouMiIgUjUVGRESKxiIjIiJFY5EREZGisciIiEjRWGRERKRoLDIiIlI0FhkRESkai4yIiBSNRUZERIrGIiMiIkVjkRERkaKxyIiISNFYZEREpGgsMiIiUjQWGRERKRqLjIiIFI1FRkREisYiIyIiRWORERGRorHIiIhI0VhkRESkaCwyIiJSNBYZEREpGouMiIgUjUVGRESKxiIjIiJFY5EREZGiOcgOQKQkhcV6ZOQVISOvCJn5//vv//7cWlaMjNwiFBTr4GBvB0d7Ozjaq+BgZwdHBxUc7ezgYK+6Y7kdnOxV8HRxQoCHBv7uGtR3VcPOTiX7n0ukCCwyov8p0ulxLS0PMSk5iEvJRWxKLuJSc3AtLQ9puYXIyCtCfpG+TrI42Kng66aGv4fm1h93Z/h7qOHv4Qx/dw0CPDTwc9fAyYEHVYhUQgghOwRRXSoo1iEyMQcRiVm4nJCFiIRsRCRmIy41Fzq9cl4O9nYqhHi7ICzAHS393RDm746wADc09HKRHY2oTrHIyOolZObjcHQqjkSn4Gh0Gq4kZSuqsKrKXeOA8EAP3B3kibZBnmgX5Alfd43sWES1hkVGVicuJReHo1NwJDoVR2JSEZuSKzuSdP7uGtwd5IHOTbzRq4UvGtfXyo5EZDYsMlI0IQQiErNxODoVR6NTcTQmFTcz8mXHsngh3i7o1cIXPVv44L4m3tA42suORFRtLDJSHJ1e4HBUCracuYmd5xKQnF0gO5KiaRzt0LmJN3q38EWvFj4I9ubeGikLi4wUQa8XOBSdgq2nb2LHuXgkZxfKjmS1mtTXomcLH/Rq4YvOTepB7cC9NbJsLDKyWHq9wOHoVPx+5ia2nY3nnpcEHs6OGHp3A4zqEIQ2DT1kxyEyikVGFkWvFzgak4qt/yuvpCyWl6VoGeCOke0b4uF2gfDSOsmOQ2TAIiOLkJJdgNWH4/Dj4TjEZ3KwhiVzsrdD31a+GNkhCD2b+XAGEpKORUZSXbiZie8PROO3f2+goLhuZs0g8wnw0GD4PYEY2T4IIRzST5KwyKjO6fUCuy4kYNnf0TgUlSo7DpnJvSH1MKFrCAa09udeGtUpFhnVmcz8Ivx69CqWH4zB1dQ82XGoljT1dcVzvULxUNtA2LPQqA6wyKjWRSVl44d/YrDu+DXkFOpkx6E6Euztgmd6hmLEPQ05uTHVKhYZ1ZqL8Zn4aOdl7LqQAD7LbFcDDw0m92iCMfc24gwiVCtYZGR2Mck5+O/uy9j87w1Y8dy8VEU+bmo83a0xxnYOhlbNK0iR+bDIyGxuZuTh0z0RWHPsGorZYFQOLxdHTOzaGBO6hsBd4yg7DlkBFhnVWFZ+Eb7YF4llf0dzCD2ZzMPZES/1bYYnOgfDwZ7n0Kj6WGRUbcU6PX46EoePd0cgJYdzH1L1NPN1xX8Gt0KP5j6yo5BCscioWvZcSMDC3y8gMilHdhSyEveH+eLNwa14rTSqMhYZVcnV1Fy8seEM/opIlh2FrJCTvR2e6t4YL/RpBmcnjnAk07DIyCRCCKw4GIv3tl9ELr8LRrWsoZczFjzUGn3C/GRHIQVgkVGlYpJz8Ora0zgSw+mkqG71b+2HeUNbI8DDWXYUsmAsMiqXXi+w9EA0Ptx1CflFHI1Icmid7DHjgRaY2DUEKhWnvKKyWGRk1JXELMxccxqnrqbLjkIEAOjerD4+HHU3fN00sqOQhWGRUSnFOj2++TMKn+yJQCG/E0YWxlvrhPdH3sVzZ1QKi4wMzt/IxKvr/sXZ65myoxBVaEKXELz+YBjUDhzZSCwy+p8lf0bi/R2XUKTj04GUIczfDZ892g7N/NxkRyHJWGQ2LqegGK+uPY2tZ27KjkJUZRpHO8we1ApPdA6WHYUkYpHZsKikbDyz6jguJ2TLjkJUI/1a+WHxiLvgpXWSHYUkYJHZqJ3n4jHj13+RVVAsOwqRWfi5q/HfUW3RpWl92VGojrHIbIxeL/DRrsv4Yv8VXuySrI6dCnjjwZZ4unsT2VGoDrHIbEhGbhFe+Pkk/ricJDsKUa0ad18w5g5pDXs7foHaFrDIbMT5G5l4ZtVxxKXmyo5CVCd6t/DB54/dw6tR2wAWmQ3YePI6Zq0/zWmmyOa0CnDH9xM6wt+Ds4FYMxaZlfto5yV8uveK7BhE0vi7a7B0Qge0buAhOwrVEhaZlRJCYP7m8/jhnxjZUYik0zrZ47PH2nFqKyvFIrNCOr3Aq2tPY92Ja7KjEFkMezsV5gxuhfFdQmRHITNjkVmZwmI9pv10AjvOJciOQmSRJnQJwZzBrWDHEY1Wg0VmRXILizFl5XH8FZEsOwqRRRsY7o/PHm0HB3s72VHIDFhkViIjrwhP/nAUx2PTZEchUoRBdwXg0zHt+F0zK8AvWFiB5OwCPLH0CC7c5OVXiEy19fRNONip8N9RbXmYUeFYZAp3PT0PT3x3GFHJObKjECnOplM34GBnh/cfuYtlpmAsMgWLTs7B498ewo2MfNlRiBRr3YlrcLBT4d0RbaBSscyUiGc6FepGeh5LjMhMfjl2FW9uPCs7BlUTi0yBUnMKMXbpYZYYkRn9eDgOczexzJSIRaYw2QXFmLDsCKKSeE6MyNyWH4zFW1vOy45BVcQiU5CCYh0mrziG09cyZEchslpLD0Rj0bYLsmNQFbDIFEKvF3jxp1P4JzJFdhQiq/fNH1H4dE+E7BhkIhaZQizYch7bz8XLjkFkMz7adRmbTl2XHYNMwCJTgO8PRHMWeyIJXll7mrPlKACLzMJtPxuPt7fy5DORDIXFekxZeQxXeWV1i8Yis2An49Lw0i8noedsmETSJGcX4qnlR5GVXyQ7CpWDRWah4jPyMWnFMeQX6WVHIbJ5lxOyMe2nk9DzU6VFYpFZoGLdrWuKJWcXyo5CRP+z/1ISPtx1SXYMMoJFZoE+2HkZR2N4gpnI0nyxLxLbztyUHYPuwCKzMPsuJuKbPyNlxyCicsxc8y8uJ2TJjkG3YZFZkJsZeZj+6ynwUqdEliun8NYMOxl5HPxhKVhkFqJYp8fzq08iLZcvDiJLF5OSi1fW/Cs7Bv0Pi8xCvL/jEr94SaQgO88nYM2xq7JjEFhkFmHPhQQs+StKdgwiqqIFm8/jWhq/LC0bi0yy6+l5mLHmX54XI1KgrIJizFzzLwRfwFKxyCQq0unx/OoTSOd5MSLFOhSViqUHomXHsGksMok+3HkZJ+PSZccgohp6f8clXEnkkHxZWGSSnLuRge94XozIKhQU6/HyL/+iWMcp5WRgkUmg1wu8seEsijlvG5HVOHM9A5/uvSI7hk1ikUmw8lAs/r2aLjsGEZnZl/uu8LUtAYusjiVk5uODHZx4lMgaFesFpv96CvlFOtlRbAqLrI7N++0csgqKZccgoloSmZSDxdv5YbUuscjq0J4LCdh2Nl52DCKqZcsPxuBSPEcx1hUWWR3JLSzGnE3nZMcgojqg0wu8vfW87Bg2g0VWR/676zKup+fJjkFEdeSviGTsvZggO4ZNYJHVgXM3MrDs7xjZMYiojr299QK/W1YHWGS1jN8ZI7JdUUk5WHkoVnYMq8ciq2W/HrvK75UQ2bBP9kQgPbdQdgyrxiKrRYXFeny6J0J2DCKSKD23CB/v5vtAbWKR1aKfj8bhRka+7BhEJNmqQ7GITMqWHcNqschqSX6RDl/s47xrRHRrxo93tl6QHcNqschqyapDsUjILJAdg4gsxN6LifgrIkl2DKvEIqsFuYXF+PqPSNkxiMjCvL3lAvQcwWx2LLJasPyfWCRnc5QSEZV2KSELO85xmjpzs8ki++KLLxASEgKNRoNOnTrhyJEjZlt3dkExlvzJvTEiMu7rP3lBXXOzuSL75ZdfMH36dMydOxcnTpzA3Xffjf79+yMxMdEs6//+QDTScovMsi4isj7/Xk3H4agU2TGsikoIYVMHbDt16oSOHTvi888/BwDo9XoEBQVh2rRpmDVrVo3WnZFXhO7v7UVmPi/TQkTl6xPmi+8ndJQdw2rY1B5ZYWEhjh8/jr59+xqW2dnZoW/fvjh48GCN17/0ryiWGBFVat+lRFxO4GVezMWmiiw5ORk6nQ5+fn6llvv5+SE+vmYnYDNyi/A9JwYmIhMIASzhuTKzsakiq02/HItDNq/8TEQm+u3UDcRz5h+zsKkiq1+/Puzt7ZGQUPoaQQkJCfD396/2evV6wRmuiahKCnV6LPs7WnYMq2BTRebk5IT27dtjz549hmV6vR579uzBfffdV+317r2YiKupvGgmEVXN6sNxyMrnKOeasqkiA4Dp06fj22+/xfLly3HhwgU8++yzyMnJwcSJE6u9zuUHY8wXkIhsRlZBMVYfjpMdQ/EcZAeoa6NHj0ZSUhLmzJmD+Ph4tG3bFtu3by8zAMRUkUnZOHAl2cwpichWLPs7BhO7NoaTg83tV5iNzX2PzNzm/XYOP/wTIzsGESnYx6PbYli7QNkxFIsfAWogv0iHDSevy45BRAr367GrsiMoGousBrafjUdGHk/UElHNHIxKwfV0DhirLhZZDfxylJ+iiKjmhADWHb8mO4ZisciqKTYlB4eiOfEnEZnHuhMssupikVXTL0evgsNkiMhcYlNycSQ6VXYMRWKRVYMQAutPcJAHEZnXeu6VVQuLrBpOXU1HfCbnSCMi89p+Lh5FOr3sGIrDIquGXecTKr8REVEVpecW4a+IJNkxFIdFVg07WWREVEu2/HtTdgTFYZFVUXRyDq4kZsuOQURWatf5BOQX6WTHUBQWWRXtOl+zC3ASEVUkq6AY+y8lyo6hKCyyKuL5MSKqbdvO8gNzVbDIqiAluwDHY9NkxyAiK/f3FU62UBUssirYcyERen4JmohqWXJ2AS7GZ8qOoRgssirgaEUiqivcKzMdi8xEeYU6HLjC73cQUd34mxfsNRmLzER/RSQhv4jfuCeiunEkOhXFnOXDJCwyE+25wOGwRFR3sguKcepquuwYisAiM9HRWM5KTUR1i+fJTMMiM0FGbhGik3NkxyAiG8PzZKZhkZng5NU0XnuMiOrcyatpyC0slh3D4rHITHAyLl12BCKyQUU6gcO82GalWGQm4AlXIpLl7wgeXqwMi6wSQgj8ey1ddgwislEHozjgozIsskpEJecgPbdIdgwislGXE7J41ehKsMgqcYrnx4hIoiKdQFQSR01XhEVWiZNXOds9Ecl1KSFLdgSLxiKrBEcsEpFslzgTfoVYZBXIK9ThUjw/CRGRXHwfqhiLrAJnrmegmBcgIyLJeGixYiyyCvDJQ0SW4FpaHnIKOMNHeVhkFbiWmis7AhERhLg1DJ+MY5FV4Goai4yILAPPk5WPRVaBOO6REZGF4KmO8rHIKnA1NU92BCIiANwjqwiLrByZ+UXIyOPUVERkGVhk5WORleMqDysSkQVJySlEVj4/XBvDIisHDysSkaVJyS6UHcEiscjKcY0jFonIwiRnF8iOYJFYZOXgoUUisjTJ3CMzikVWjqtpPLRIRJYlJYd7ZMawyMrBPTIisjQ8R2Yci6wc19O5R0ZEliWF58iMYpEZUVCsQ26hTnYMIqJSknO4R2YMi8yI7HzOMk1Elic5i3tkxrDIjMhikRGRBUrhHplRLDIjsnndHyKyQDxHZhyLzIhMTgNDRBYoPa8IOl61vgwWmRE8R0ZElkgIfpfMGBaZEXlFHLFIRJYpv1AvO4LFYZEZUVDMJwoRWSad4KHFO7HIjChkkRGRhdLp+f50JxaZESwyIrJUxRzsUQaLzIhCHYuMiCwTRy2WxSIzgntkRGSpWGRlOcgOYIn4RCFzGuyTjPc038NOz691UM2pVEsAeMqOYVFYZEY4O9nLjkBWZEtSfbQKfhjPpr4DlY5TDFEN2fED0Z14aNEIFxYZmdni2Gb4xHsOhL1adhRSOjvuf9yJRWaEsyOLjMzv47gmWFxvLoSDs+wopGQssjJYZEZo1XyiUO346moI3vGcB+HoIjsKKRWLrAwWmRE8R0a16btrQZjrtgDCSSs7CikRi6wMFpkRLjy0SLVsxY0GeF27AELtLjsKKQ2LrAwWmRE8tEh14eebAZipmQ+9xlN2FFISB43sBBaHRWYEDy1SXVmX4IcXneZD71xPdhRSAjtHwIXPlTuxyIzg8HuqS5sTffCcw3zoXerLjkKWztUXUKlkp7A4LDIjXJx4aJHq1vYkbzytmg+d1k92FLJkrnx+GMMiM4J7ZCTD3hQvjBfzoHNtIDsKWSo3f9kJLBKLzAhHezs42nP3neregVQPPFY8B8VuDWVHIUvk6is7gUVikZWjntZJdgSyUYfT3TGq8D8ocg+WHYUsjSv3yIxhkZUjyIszL5A8JzLcMDzvTRR6NpEdhSyJG8+RGcMiK0ejeiwykutMlhZDs99AoVcz2VHIUnCPzCgWWTmCWGRkAS5mu2BQ5izk1wuTHYUsAUctGsUiKweLjCxFRI4zBqS9ijzvcNlRSDYeWjSKRVYOHlokSxKTp0G/lBnIrX+37CgkjYp7ZOVgkZUjqB6vGUWW5Vq+Gn2SXka2zz2yo5AMLvUAe0fZKSwSi6wc/u4aODlw85BliS9wQu+EF5Hp21F2FKpr3BsrF9+py6FSqdDQk3tlZHmSCh3R8+Y0pPvfJzsK1SW3ANkJLBaLrAIc8EGWKq3IAT2vP4vUgO6yo1Bd8WstO4HFYpFVgOfJyJJlFDmg+9XJSGrQW3YUqgsBHOhTHhZZBThykSxdTrE9esQ+ifgG/WRHodoW0FZ2AovFIqtAo3pa2RGIKpWns0fPmPG4EThAdhSqLWp3wDtUdgqLxSKrQHigu+wIRCYp0NuhZ/QTiGs4RHYUqg3+bXhBzQqwyCrQ0MsFvm5q2TGITFKkV6F35GhEBw2THYXMjefHKsQiq0S7Rp6yIxCZTCfs0OfKSEQEjZQdhcyJRVYhFlkl2jXykh2BqEqEUKFfxMM4H/So7ChkLiyyCrHIKtEuyFN2BKJqeTBiCE4HPSE7BtWUowtQv7nsFBaNRVaJuxp6wsGOJ1lJmYZGDMTxoImyY1BN+LUG7Oxlp7BoLLJKODvZo4W/m+wYRNU2IqIfDgZNkh2DqouHFSvFIjPBPTxPRgr3aERv/Bn0rOwYVB0sskqxyEzAkYtkDcZFdMfuoGmyY1BVscgqxSIzAUcukrV4OuI+/N7wZdkxyFQOzoBvK9kpLB6LzASN62vh5cIL2pF1eO5KR2xsOBMCHMRk8Rr34MU0TcAiM1FbDsMnK/LSlXvwa4PXIFR8C7BoLTh/pin4LDbRfaHesiMQmdVrUXfhx4DXIVQc2m2xmrPITMEiM1GfMF/ZEYjM7s2o1ljm/waEnYPsKHQn/zaAewPZKRSBRWaipr5uCPbm9cnI+iyIbolvfN6EsOO5GIvCvTGTsciqoHcL7pWRdXo3tjk+rT8Xwp5Xe7AYzQfKTqAYLLIquL8li4ys13/jmuCDenMhHDSyo5DWFwi8R3YKxWCRVUGnxt7QOvHEOFmvL66G4B3P+RCOPIwuVbMHeCHNKmCRVYGTgx16tvCRHYOoVn13LQjz3OZDOGllR7FdHHZfJSyyKhoQHiA7AlGtW34jELO1CyDUnDC7ztmrgSa9ZadQFBZZFd0f5gu1AzcbWb/VNwMwU7MAQu0hO4ptCekKqF1lp1AUviNXkVbtgJ7NeXiRbMO6BD+8oF4AvXM92VFsB0crVhmLrBoebMPDi2Q7Nif64DmH+dA715cdxTY07y87geKwyKrh/pa+cOLhRbIh25O8McluHnRafgWlVgXcDXgFy06hOHw3rgY3jSP68MvRZGP2pNTDRDEPOlcekag17Z6QnUCRWGTV9FinRrIjENW5P1M9MVY3B8VugbKjWB8HZ6DNSNkpFIlFVk3dm9VHCOdeJBt0MM0DowrnoNidH+bMqtVQwNlTdgpFYpFVk0ql4l4Z2awTGW4Ynv8mijyayI5iPXhYsdpYZDUwsn0Qv1NGNut0piuG5ryBQs+msqMoX70mQEg32SkUi+/CNeCldeJQfLJpF7JdMCjrdRTUayE7irK1G8u5FWuARVZDYzvz8CLZtogcZwxMfw153q1lR1Eme6caH1b8888/MWTIEDRo0AAqlQobN240TzaFYJHVUPvgegjz53x0ZNuicjXolzITufXvkh1FeVo/DLjW7Os8OTk5uPvuu/HFF1+YKZSyqIQQQnYIpVt1KBZvbjwrOwaRdAGaQuzy+QSuSSdlR1GOp/cCDdubbXUqlQobNmzAsGHDzLZOS8c9MjMY1i6Q1ykjAnAz3wl9El9Cpm9H2VGUIbC9WUvMVrHIzMBV7YBh7fgFUSIASCxwRO/455Huf5/sKJbv3imyE1gFFpmZjO3M+dGISqQUOqLn9WeR6s8h5eXS+t46P0Y1xiIzk5YB7ujejLODE5XIKHJA92tTkNygl+wolqnjU4CDk+wUVoFFZkYzHuB3aYhul1Nsj56xTyOhQV/ZUSyLsxfQ+TnZKawGi8yM2gZ54v4wzopPdLscnR16xEzAjcABsqNYjq4vARp3s60uOzsbp06dwqlTpwAA0dHROHXqFOLi4sx2H5aMw+/N7NyNDAz+7AC4VYlKc7QT2NvkJwRd2yI7ilxuAcALJwFHZ7Otcv/+/ejdu3eZ5ePHj8cPP/xgtvuxVCyyWvDsquPYdjZedgwii2Ov0mN36Fo0vrZRdhR5Bn0IdHxadgqrwkOLtWB6v+aw47RpRGXohB36RI7ElaARsqPI4RUC3DNedgqrwyKrBc383DDk7gayYxBZJCFU6HdlOC4GjZYdpe71eh2wd5SdwuqwyGrJS32bw567ZURGCaHCgIiHcCbocdlR6o5vK6DNKNkprBKLrJY0rq/FcM72QVShIRGDcKLRBNkx6kbv2YAd33JrA7dqLXrh/mZwtOdeGVFFhl9+AIeDJsmOUbsC2wMtB8tOYbVYZLUoqJ4LRnUIkh2DyOKNjuiNv4KekR2j9tw/R3YCq8Yiq2Uv3N8MrmoH2TGILN4TET2wN+h52THMr3EPoEkv2SmsGouslvm5azC9X3PZMYgU4cmILtje8EXZMczr/rmyE1g9FlkdmNAlBHc19JAdg0gRnrnSCb81nAEBKzi/3GYU0LCD7BRWj0VWB+zsVFj4cBsOxycy0QtX2mNdg1chVAp+i9L6AAPfk53CJij4WaIs4YEemNglRHYMIsWYGXU3VgfMglAp9OrrD74PuNSTncImsMjq0PQHmiPQ03wThRJZu9lR4fjB/w0IO4UNmGo5hBfNrEMssjrk4uSAt4a1lh2DSFHmR7fENz5vQtgpZGonZy/gwQ9lp7ApLLI61ifMD4PaBMiOQaQo78Y2x+c+cyDsFXBF5f6LADc/2SlsCotMgrlDWsFNo7BDJUSSfRgbig/rzYNw0MiOUr6m/YC2j8pOYXNYZBL4umvw6oAw2TGIFOfzqyFY5DkPwtFFdpSynNyAIR/LTmGTWGSSjO3UCPc08pQdg0hxllxrhPlu8yCctLKjlNZvPuDRUHYKm8Qik0SlUmHxI3fD2VGhQ4uJJPrhRkPM1i6AULvJjnJLSHegw5OyU9gsFplETX1dMW9oK9kxiBRp9c0AvOK8AEItedYcRxdg6GeAihMeyMIik2x0x0a8mjRRNa2N98NLmvnQa7zkhejzJlCvsbz7JxaZJVj4cDga1bPAk9dECrApwRdTHedD71y/7u+8aT+g07N1f79UCovMArhpHPHZo+14EU6iatqWVB+T7OZBp/Wtuzut1wQY8R2v+mwB+AhYiLuDPPEah+QTVduelHp4EnOh0/rX/p05uQJjVgPOnrV/X1QpFpkFebp7E876QVQDf6R4Yax+LordAmvxXlTAsK8A35a1eB9UFSwyC7P4kbvQ1NdVdgwixTqY5oExhXNQ7N6odu6g+wyg1dDaWTdVC4vMwmjVDvh6bHu4qjmFFVF1HctwwyP5b6LIw8yjCZv1B3rPNu86qcZYZBaoqa8rFj9yl+wYRIp2KtMVw3LfQKFnU/Os0LspMOJbDu6wQHxELNSDbQLwXK9Q2TGIFO1clhaDs15HgVeLmq3Iye3W4A6N5C9fk1EsMgv26oAwjLiHc7cR1cTlHGcMzHgN+d7VnUVHBTz8NeBTwzKkWsMis3DvjWiDXi18ZMcgUrSoXA0eSJ2J3Pptqv7LPV8FWg42fygyG5UQQsgOQRXLLSzGo98exr9X02VHIVK0AE0hdvl8Atekk6b9QvOBwKM/cR5FC8c9MgVwcXLAsgkd0aS+hV22gkhhbuY7oU/iS8jy7VD5jQPuBoYvYYkpAItMIeppnbD8yXvh66aWHYVI0RILHNErfhoy/DqXf6P6LYCxGwCNe90Fo2pjkSlIUD0XLJvYEW78jhlRjaQUOqLHjeeQ5t+17A89g4FxmwCtd90Ho2phkSlM6wYe+GZcezjZ86EjqomMIgd0u/YMUgJ6/v9CtwBg/G+AO6eKUxIO9lCoLadvYNpPJ8FHj6hmtPZ67AteBt/0U8DEbRxmr0AsMgX74e9ozNt8XnYMIsXz09ph31ON4dKAV6BQIp5sUbAJXRvD3k6FOb+d454ZUTV5ODti6ZOd4NKAs3YoFffIrMDGk9cxc82/KNbzoSSqCg9nR/z4dCeEB7LElIxFZiV2n0/A1NUnUFCslx2FSBE8XRyx6imWmDVgkVmRg5EpmLTiGLILimVHIbJoLDHrwiKzMqevpWP890eQllskOwqRRWr0v+9jhvrwArbWgkVmhSISsvDE0iOIz8yXHYXIotzTyBPfjusAb1fOkGNNWGRW6mpqLsYuPYzYlFzZUYgswoNt/PHRqLbQONrLjkJmxiKzYolZ+Ri39AguxmfJjkIk1ZSeTTBrQBhUnADYKrHIrFxGbhEmrzyGw9GpsqMQ1TkHOxUWPBSOxzo1kh2FahGLzAYU6/R4d9tFfHcgWnYUojrjpnbA54/fg57NeWFaa8cisyGb/72B19adRm6hTnYUolrVwEOD7yd2RJg/L8NiC1hkNuZyQhamrDyO6OQc2VGIakV4oDuWju8IP3eN7ChUR1hkNigzvwjTf/kXuy8kyI5CZFbD2wXi7YfD4eLEaWRtCYvMRgkh8MW+K/ho12VwikZSOle1A94eFo5h7QJlRyEJWGQ27o/LSXjx55NI50wgpFBtgzzx6Zh2aOTtIjsKScIiI1xNzcUzq47j3I1M2VGITGanAp7pGYrp/ZrDgVdMt2ksMgIA5BfpsPD3C1h5KJbXNiOL5+euxn9HtUWXpvVlRyELwCKjUv6+koxX157G9fQ82VGIjOrb0g/vP3IXvLROsqOQhWCRURnZBcV4e8t5/Hz0quwoRAZqBzvMHtQS4+4LkR2FLAyLjMq171IiXl93hrPok3QtA9zx39F38wvOZBSLjCqUmV+E97ZdxOojcTx3RnXOTeOA6f2aY9x9IbC344S/ZByLjExyLCYVr68/g4jEbNlRyAaoVMDD7QLx+sCW8HHjtcOoYiwyMllhsR5f/xGJz/ddQWGxXnYcslItA9zx1kOt0SGknuwopBAsMqqyyKRsvLvtInad5xRXZD5uGgfM6NccT/AwIlURi4yq7XhsKt7ddhFHY9JkRyEFU6mAEfc0xKyBYajvysOIVHUsMqqx3ecTsHjHRVxO4PkzqprWDdyx4KHWaB/Mw4hUfSwyMgu9XmDtiWv4eNdl3MjgcH2qWEMvZ0zr0xSPtA/iYUSqMRYZmVV+kQ4rDsbgy/2RnIiYygj0dMbU3k0xskNDOHJ+RDITFhnVioy8Inz9RySW/R2N/CKOcLR1DTw0eK53U4zqEAQnBxYYmReLjGpVfEY+vvsrCr8cu4qs/GLZcaiOhXi7YErPUAy/JxBqB3vZcchKscioTuQWFmPd8WtY9k8MopJyZMehWhYe6I5neobiwfAA2PEcGNUyFhnVKSEE/oxIxrK/o/HH5SROe2VluoR645meoejR3Ed2FLIhLDKSJiopG8v/icHa49eQU6iTHYeqyc9djRH3NMSoDkEIqa+VHYdsEIuMpMvKL8Kvx65hxcEYxKbkyo5DJnC0V+H+MD+M6tgQPZv7cgg9ScUiI4uh1wvsv5yIjSdvYM+FBO6lWaBmvq4Y3TEID7cLhDdn4SALwSIji5RfpMP+S0n4/cxNlppkbmoHDL47AKM6BKFdIy/ZcYjKYJGRxcsv0uGPy0nYepqlVlfcNQ7o3twHfVv6YkDrADg7ceg8WS4WGSlKSand2lNLRHYBv5tmLmH+bugd5oveLXzRPtiL571IMVhkpFj5RTr8eTkJf0Yk4WBkCiL5/bQq0TrZo2vT+ugd5oteLXwQ4OEsOxJRtbDIyGokZubjYFQKDkWl4J/IFI6AvINKBYT6uKJXcx/0DvNFx5B6nC6KrAKLjKxWYmY+TsSl4XhsGk7EpePM9QybubK1SgU09taidaAH2gS6IzzQA60beMDD2VF2NCKzY5GRzSgs1uPsjQycvZ6BqKQcRCXnIDo5G9fT8qBX8KvATgU0rq9Fm0APhP/vT+sG7nDTsLTINrDIyOYVFOsQm5L7v3LLRrSh5HKQmlMoO55BfVc1Ar2c0dDwxwVh/m5oFeAOrdpBdjwiaVhkRBXIyC1CVHI2UrILkZlfhMy8ImTmFyMjr+T/i5CZV3zrv/lFyMgtQnZBcak9PAc7FRzt7eBoX/JfOzg63Pp/p5K/26ugVTvAx01964/rrf/6umng665GoKczNI4cAk9kDIuMyMyEEMgr0sHeTgUnezuoVBzGTlSbWGRERKRoHHtLRESKxiIjIiJFY5EREZGisciIiEjRWGRERKRoLDIiIlI0FhkRESkai4yIiBSNRUZERIrGIiMiIkVjkRERkaKxyIiISNFYZEREpGgsMiIiUjQWGRERKRqLjIiIFI1FRkREisYiIyIiRWORERGRorHIiIhI0VhkRESkaCwyIiJSNBYZEREpGouMiIgUjUVGRESKxiIjIiJFY5EREZGisciIiEjRWGRERKRoLDIiIlI0FhkRESkai4yIiBSNRUZERIrGIiMiIkVjkRERkaKxyIiISNFYZEREpGgsMiIiUjQWGRERKRqLjIiIFI1FRkREisYiIyIiRWORERGRorHIiIhI0VhkRESkaP8HFxtOMEzxYU8AAAAASUVORK5CYII=",
+      "text/plain": [
+       "<Figure size 640x480 with 1 Axes>"
+      ]
+     },
+     "metadata": {},
+     "output_type": "display_data"
+    }
+   ],
+   "source": [
+    "#Checking If training data is Imbalanced\n",
+    "response_data = df_train['Response'].value_counts()\n",
+    "plt.figure(figsize=(6,6))\n",
+    "fig, ax = plt.subplots()\n",
+    "ax.pie(response_data, labels = [0,1])\n",
+    "ax.set_title('Checking Imbalance in Training Data Or Response')"
+   ]
+  },
+  {
+   "cell_type": "code",
+   "execution_count": 9,
+   "id": "6b975802",
+   "metadata": {
+    "execution": {
+     "iopub.execute_input": "2024-07-29T18:32:52.873857Z",
+     "iopub.status.busy": "2024-07-29T18:32:52.873404Z",
+     "iopub.status.idle": "2024-07-29T18:32:52.879949Z",
+     "shell.execute_reply": "2024-07-29T18:32:52.878656Z"
+    },
+    "papermill": {
+     "duration": 0.037598,
+     "end_time": "2024-07-29T18:32:52.882893",
+     "exception": false,
+     "start_time": "2024-07-29T18:32:52.845295",
+     "status": "completed"
+    },
+    "tags": []
+   },
+   "outputs": [],
+   "source": [
+    "def veh(vehicle_dam):\n",
+    "    if vehicle_dam == 'Yes':\n",
+    "        return 1\n",
+    "    \n",
+    "    else:\n",
+    "        return 0"
+   ]
+  },
+  {
+   "cell_type": "code",
+   "execution_count": 10,
+   "id": "db586358",
+   "metadata": {
+    "execution": {
+     "iopub.execute_input": "2024-07-29T18:32:52.912489Z",
+     "iopub.status.busy": "2024-07-29T18:32:52.912237Z",
+     "iopub.status.idle": "2024-07-29T18:33:01.217423Z",
+     "shell.execute_reply": "2024-07-29T18:33:01.216500Z"
+    },
+    "papermill": {
+     "duration": 8.321023,
+     "end_time": "2024-07-29T18:33:01.219862",
+     "exception": false,
+     "start_time": "2024-07-29T18:32:52.898839",
+     "status": "completed"
+    },
+    "tags": []
+   },
+   "outputs": [],
+   "source": [
+    "df_train['Vehicle_Damages'] = df_train['Vehicle_Damage'].apply(veh)\n",
+    "df_train.drop(['Vehicle_Damage'], axis = 1, inplace = True)"
+   ]
+  },
+  {
+   "cell_type": "code",
+   "execution_count": 11,
+   "id": "08925d24",
+   "metadata": {
+    "execution": {
+     "iopub.execute_input": "2024-07-29T18:33:01.246801Z",
+     "iopub.status.busy": "2024-07-29T18:33:01.246499Z",
+     "iopub.status.idle": "2024-07-29T18:33:06.759550Z",
+     "shell.execute_reply": "2024-07-29T18:33:06.758524Z"
+    },
+    "papermill": {
+     "duration": 5.529319,
+     "end_time": "2024-07-29T18:33:06.762361",
+     "exception": false,
+     "start_time": "2024-07-29T18:33:01.233042",
+     "status": "completed"
+    },
+    "tags": []
+   },
+   "outputs": [],
+   "source": [
+    "df_test['Vehicle_Damages'] = df_test['Vehicle_Damage'].apply(veh)\n",
+    "df_test.drop(['Vehicle_Damage'], axis = 1, inplace = True)"
+   ]
+  },
+  {
+   "cell_type": "code",
+   "execution_count": 12,
+   "id": "d650e1ea",
+   "metadata": {
+    "execution": {
+     "iopub.execute_input": "2024-07-29T18:33:06.789793Z",
+     "iopub.status.busy": "2024-07-29T18:33:06.789504Z",
+     "iopub.status.idle": "2024-07-29T18:33:09.505102Z",
+     "shell.execute_reply": "2024-07-29T18:33:09.504227Z"
+    },
+    "papermill": {
+     "duration": 2.73152,
+     "end_time": "2024-07-29T18:33:09.507249",
+     "exception": false,
+     "start_time": "2024-07-29T18:33:06.775729",
+     "status": "completed"
+    },
+    "tags": []
+   },
+   "outputs": [
+    {
+     "data": {
+      "text/html": [
+       "<div>\n",
+       "<style scoped>\n",
+       "    .dataframe tbody tr th:only-of-type {\n",
+       "        vertical-align: middle;\n",
+       "    }\n",
+       "\n",
+       "    .dataframe tbody tr th {\n",
+       "        vertical-align: top;\n",
+       "    }\n",
+       "\n",
+       "    .dataframe thead th {\n",
+       "        text-align: right;\n",
+       "    }\n",
+       "</style>\n",
+       "<table border=\"1\" class=\"dataframe\">\n",
+       "  <thead>\n",
+       "    <tr style=\"text-align: right;\">\n",
+       "      <th></th>\n",
+       "      <th>id</th>\n",
+       "      <th>Gender</th>\n",
+       "      <th>Age</th>\n",
+       "      <th>Driving_License</th>\n",
+       "      <th>Region_Code</th>\n",
+       "      <th>Previously_Insured</th>\n",
+       "      <th>Annual_Premium</th>\n",
+       "      <th>Policy_Sales_Channel</th>\n",
+       "      <th>Vintage</th>\n",
+       "      <th>Response</th>\n",
+       "      <th>Vehicle_Damages</th>\n",
+       "      <th>Vehicle_Age_1-2 Year</th>\n",
+       "      <th>Vehicle_Age_&lt; 1 Year</th>\n",
+       "      <th>Vehicle_Age_&gt; 2 Years</th>\n",
+       "    </tr>\n",
+       "  </thead>\n",
+       "  <tbody>\n",
+       "    <tr>\n",
+       "      <th>0</th>\n",
+       "      <td>0</td>\n",
+       "      <td>Male</td>\n",
+       "      <td>21</td>\n",
+       "      <td>1</td>\n",
+       "      <td>35.0</td>\n",
+       "      <td>0</td>\n",
+       "      <td>65101.0</td>\n",
+       "      <td>124.0</td>\n",
+       "      <td>187</td>\n",
+       "      <td>0</td>\n",
+       "      <td>1</td>\n",
+       "      <td>True</td>\n",
+       "      <td>False</td>\n",
+       "      <td>False</td>\n",
+       "    </tr>\n",
+       "    <tr>\n",
+       "      <th>1</th>\n",
+       "      <td>1</td>\n",
+       "      <td>Male</td>\n",
+       "      <td>43</td>\n",
+       "      <td>1</td>\n",
+       "      <td>28.0</td>\n",
+       "      <td>0</td>\n",
+       "      <td>58911.0</td>\n",
+       "      <td>26.0</td>\n",
+       "      <td>288</td>\n",
+       "      <td>1</td>\n",
+       "      <td>1</td>\n",
+       "      <td>False</td>\n",
+       "      <td>False</td>\n",
+       "      <td>True</td>\n",
+       "    </tr>\n",
+       "    <tr>\n",
+       "      <th>2</th>\n",
+       "      <td>2</td>\n",
+       "      <td>Female</td>\n",
+       "      <td>25</td>\n",
+       "      <td>1</td>\n",
+       "      <td>14.0</td>\n",
+       "      <td>1</td>\n",
+       "      <td>38043.0</td>\n",
+       "      <td>152.0</td>\n",
+       "      <td>254</td>\n",
+       "      <td>0</td>\n",
+       "      <td>0</td>\n",
+       "      <td>False</td>\n",
+       "      <td>True</td>\n",
+       "      <td>False</td>\n",
+       "    </tr>\n",
+       "    <tr>\n",
+       "      <th>3</th>\n",
+       "      <td>3</td>\n",
+       "      <td>Female</td>\n",
+       "      <td>35</td>\n",
+       "      <td>1</td>\n",
+       "      <td>1.0</td>\n",
+       "      <td>0</td>\n",
+       "      <td>2630.0</td>\n",
+       "      <td>156.0</td>\n",
+       "      <td>76</td>\n",
+       "      <td>0</td>\n",
+       "      <td>1</td>\n",
+       "      <td>True</td>\n",
+       "      <td>False</td>\n",
+       "      <td>False</td>\n",
+       "    </tr>\n",
+       "    <tr>\n",
+       "      <th>4</th>\n",
+       "      <td>4</td>\n",
+       "      <td>Female</td>\n",
+       "      <td>36</td>\n",
+       "      <td>1</td>\n",
+       "      <td>15.0</td>\n",
+       "      <td>1</td>\n",
+       "      <td>31951.0</td>\n",
+       "      <td>152.0</td>\n",
+       "      <td>294</td>\n",
+       "      <td>0</td>\n",
+       "      <td>0</td>\n",
+       "      <td>True</td>\n",
+       "      <td>False</td>\n",
+       "      <td>False</td>\n",
+       "    </tr>\n",
+       "  </tbody>\n",
+       "</table>\n",
+       "</div>"
+      ],
+      "text/plain": [
+       "   id  Gender  Age  Driving_License  Region_Code  Previously_Insured  \\\n",
+       "0   0    Male   21                1         35.0                   0   \n",
+       "1   1    Male   43                1         28.0                   0   \n",
+       "2   2  Female   25                1         14.0                   1   \n",
+       "3   3  Female   35                1          1.0                   0   \n",
+       "4   4  Female   36                1         15.0                   1   \n",
+       "\n",
+       "   Annual_Premium  Policy_Sales_Channel  Vintage  Response  Vehicle_Damages  \\\n",
+       "0         65101.0                 124.0      187         0                1   \n",
+       "1         58911.0                  26.0      288         1                1   \n",
+       "2         38043.0                 152.0      254         0                0   \n",
+       "3          2630.0                 156.0       76         0                1   \n",
+       "4         31951.0                 152.0      294         0                0   \n",
+       "\n",
+       "   Vehicle_Age_1-2 Year  Vehicle_Age_< 1 Year  Vehicle_Age_> 2 Years  \n",
+       "0                  True                 False                  False  \n",
+       "1                 False                 False                   True  \n",
+       "2                 False                  True                  False  \n",
+       "3                  True                 False                  False  \n",
+       "4                  True                 False                  False  "
+      ]
+     },
+     "execution_count": 12,
+     "metadata": {},
+     "output_type": "execute_result"
+    }
+   ],
+   "source": [
+    "df_train['Vehicle_Age'] = df_train['Vehicle_Age'].astype('category')\n",
+    "df_train = pd.get_dummies(df_train, columns=['Vehicle_Age'])\n",
+    "df_train.head()"
+   ]
+  },
+  {
+   "cell_type": "code",
+   "execution_count": 13,
+   "id": "01361dce",
+   "metadata": {
+    "execution": {
+     "iopub.execute_input": "2024-07-29T18:33:09.534965Z",
+     "iopub.status.busy": "2024-07-29T18:33:09.534293Z",
+     "iopub.status.idle": "2024-07-29T18:33:11.260051Z",
+     "shell.execute_reply": "2024-07-29T18:33:11.259084Z"
+    },
+    "papermill": {
+     "duration": 1.741768,
+     "end_time": "2024-07-29T18:33:11.262304",
+     "exception": false,
+     "start_time": "2024-07-29T18:33:09.520536",
+     "status": "completed"
+    },
+    "tags": []
+   },
+   "outputs": [
+    {
+     "data": {
+      "text/html": [
+       "<div>\n",
+       "<style scoped>\n",
+       "    .dataframe tbody tr th:only-of-type {\n",
+       "        vertical-align: middle;\n",
+       "    }\n",
+       "\n",
+       "    .dataframe tbody tr th {\n",
+       "        vertical-align: top;\n",
+       "    }\n",
+       "\n",
+       "    .dataframe thead th {\n",
+       "        text-align: right;\n",
+       "    }\n",
+       "</style>\n",
+       "<table border=\"1\" class=\"dataframe\">\n",
+       "  <thead>\n",
+       "    <tr style=\"text-align: right;\">\n",
+       "      <th></th>\n",
+       "      <th>id</th>\n",
+       "      <th>Gender</th>\n",
+       "      <th>Age</th>\n",
+       "      <th>Driving_License</th>\n",
+       "      <th>Region_Code</th>\n",
+       "      <th>Previously_Insured</th>\n",
+       "      <th>Annual_Premium</th>\n",
+       "      <th>Policy_Sales_Channel</th>\n",
+       "      <th>Vintage</th>\n",
+       "      <th>Vehicle_Damages</th>\n",
+       "      <th>Vehicle_Age_1-2 Year</th>\n",
+       "      <th>Vehicle_Age_&lt; 1 Year</th>\n",
+       "      <th>Vehicle_Age_&gt; 2 Years</th>\n",
+       "    </tr>\n",
+       "  </thead>\n",
+       "  <tbody>\n",
+       "    <tr>\n",
+       "      <th>0</th>\n",
+       "      <td>11504798</td>\n",
+       "      <td>Female</td>\n",
+       "      <td>20</td>\n",
+       "      <td>1</td>\n",
+       "      <td>47.0</td>\n",
+       "      <td>0</td>\n",
+       "      <td>2630.0</td>\n",
+       "      <td>160.0</td>\n",
+       "      <td>228</td>\n",
+       "      <td>0</td>\n",
+       "      <td>False</td>\n",
+       "      <td>True</td>\n",
+       "      <td>False</td>\n",
+       "    </tr>\n",
+       "    <tr>\n",
+       "      <th>1</th>\n",
+       "      <td>11504799</td>\n",
+       "      <td>Male</td>\n",
+       "      <td>47</td>\n",
+       "      <td>1</td>\n",
+       "      <td>28.0</td>\n",
+       "      <td>0</td>\n",
+       "      <td>37483.0</td>\n",
+       "      <td>124.0</td>\n",
+       "      <td>123</td>\n",
+       "      <td>1</td>\n",
+       "      <td>True</td>\n",
+       "      <td>False</td>\n",
+       "      <td>False</td>\n",
+       "    </tr>\n",
+       "    <tr>\n",
+       "      <th>2</th>\n",
+       "      <td>11504800</td>\n",
+       "      <td>Male</td>\n",
+       "      <td>47</td>\n",
+       "      <td>1</td>\n",
+       "      <td>43.0</td>\n",
+       "      <td>0</td>\n",
+       "      <td>2630.0</td>\n",
+       "      <td>26.0</td>\n",
+       "      <td>271</td>\n",
+       "      <td>1</td>\n",
+       "      <td>True</td>\n",
+       "      <td>False</td>\n",
+       "      <td>False</td>\n",
+       "    </tr>\n",
+       "    <tr>\n",
+       "      <th>3</th>\n",
+       "      <td>11504801</td>\n",
+       "      <td>Female</td>\n",
+       "      <td>22</td>\n",
+       "      <td>1</td>\n",
+       "      <td>47.0</td>\n",
+       "      <td>1</td>\n",
+       "      <td>24502.0</td>\n",
+       "      <td>152.0</td>\n",
+       "      <td>115</td>\n",
+       "      <td>0</td>\n",
+       "      <td>False</td>\n",
+       "      <td>True</td>\n",
+       "      <td>False</td>\n",
+       "    </tr>\n",
+       "    <tr>\n",
+       "      <th>4</th>\n",
+       "      <td>11504802</td>\n",
+       "      <td>Male</td>\n",
+       "      <td>51</td>\n",
+       "      <td>1</td>\n",
+       "      <td>19.0</td>\n",
+       "      <td>0</td>\n",
+       "      <td>34115.0</td>\n",
+       "      <td>124.0</td>\n",
+       "      <td>148</td>\n",
+       "      <td>0</td>\n",
+       "      <td>True</td>\n",
+       "      <td>False</td>\n",
+       "      <td>False</td>\n",
+       "    </tr>\n",
+       "  </tbody>\n",
+       "</table>\n",
+       "</div>"
+      ],
+      "text/plain": [
+       "         id  Gender  Age  Driving_License  Region_Code  Previously_Insured  \\\n",
+       "0  11504798  Female   20                1         47.0                   0   \n",
+       "1  11504799    Male   47                1         28.0                   0   \n",
+       "2  11504800    Male   47                1         43.0                   0   \n",
+       "3  11504801  Female   22                1         47.0                   1   \n",
+       "4  11504802    Male   51                1         19.0                   0   \n",
+       "\n",
+       "   Annual_Premium  Policy_Sales_Channel  Vintage  Vehicle_Damages  \\\n",
+       "0          2630.0                 160.0      228                0   \n",
+       "1         37483.0                 124.0      123                1   \n",
+       "2          2630.0                  26.0      271                1   \n",
+       "3         24502.0                 152.0      115                0   \n",
+       "4         34115.0                 124.0      148                0   \n",
+       "\n",
+       "   Vehicle_Age_1-2 Year  Vehicle_Age_< 1 Year  Vehicle_Age_> 2 Years  \n",
+       "0                 False                  True                  False  \n",
+       "1                  True                 False                  False  \n",
+       "2                  True                 False                  False  \n",
+       "3                 False                  True                  False  \n",
+       "4                  True                 False                  False  "
+      ]
+     },
+     "execution_count": 13,
+     "metadata": {},
+     "output_type": "execute_result"
+    }
+   ],
+   "source": [
+    "df_test['Vehicle_Age'] = df_test['Vehicle_Age'].astype('category')\n",
+    "df_test = pd.get_dummies(df_test, columns=['Vehicle_Age'])\n",
+    "df_test.head()"
+   ]
+  },
+  {
+   "cell_type": "code",
+   "execution_count": 14,
+   "id": "c0987880",
+   "metadata": {
+    "execution": {
+     "iopub.execute_input": "2024-07-29T18:33:11.290386Z",
+     "iopub.status.busy": "2024-07-29T18:33:11.289866Z",
+     "iopub.status.idle": "2024-07-29T18:33:14.379219Z",
+     "shell.execute_reply": "2024-07-29T18:33:14.378090Z"
+    },
+    "papermill": {
+     "duration": 3.105986,
+     "end_time": "2024-07-29T18:33:14.381776",
+     "exception": false,
+     "start_time": "2024-07-29T18:33:11.275790",
+     "status": "completed"
+    },
+    "tags": []
+   },
+   "outputs": [],
+   "source": [
+    "df_test['Gender'] = df_test['Gender'].astype('category')\n",
+    "df_test = pd.get_dummies(df_test, columns=['Gender'],drop_first=True)\n",
+    "\n",
+    "df_train['Gender'] = df_train['Gender'].astype('category')\n",
+    "df_train = pd.get_dummies(df_train, columns=['Gender'],drop_first=True)"
+   ]
+  },
+  {
+   "cell_type": "markdown",
+   "id": "e3210eec",
+   "metadata": {
+    "papermill": {
+     "duration": 0.014209,
+     "end_time": "2024-07-29T18:33:14.411211",
+     "exception": false,
+     "start_time": "2024-07-29T18:33:14.397002",
+     "status": "completed"
+    },
+    "tags": []
+   },
+   "source": [
+    "# DATASET CREATION"
+   ]
+  },
+  {
+   "cell_type": "code",
+   "execution_count": 15,
+   "id": "c0cbdc97",
+   "metadata": {
+    "execution": {
+     "iopub.execute_input": "2024-07-29T18:33:14.442145Z",
+     "iopub.status.busy": "2024-07-29T18:33:14.441828Z",
+     "iopub.status.idle": "2024-07-29T18:33:14.728936Z",
+     "shell.execute_reply": "2024-07-29T18:33:14.728161Z"
+    },
+    "papermill": {
+     "duration": 0.305286,
+     "end_time": "2024-07-29T18:33:14.731320",
+     "exception": false,
+     "start_time": "2024-07-29T18:33:14.426034",
+     "status": "completed"
+    },
+    "tags": []
+   },
+   "outputs": [],
+   "source": [
+    "X_train = df_train[['Age', 'Driving_License', 'Region_Code', 'Previously_Insured', 'Annual_Premium', 'Policy_Sales_Channel', 'Vintage', 'Vehicle_Damages', 'Vehicle_Age_1-2 Year','Vehicle_Age_< 1 Year', 'Vehicle_Age_> 2 Years', 'Gender_Male']]\n",
+    "y_train = df_train['Response']"
+   ]
+  },
+  {
+   "cell_type": "code",
+   "execution_count": 16,
+   "id": "2d259bec",
+   "metadata": {
+    "execution": {
+     "iopub.execute_input": "2024-07-29T18:33:14.759163Z",
+     "iopub.status.busy": "2024-07-29T18:33:14.758873Z",
+     "iopub.status.idle": "2024-07-29T18:33:14.994147Z",
+     "shell.execute_reply": "2024-07-29T18:33:14.992775Z"
+    },
+    "papermill": {
+     "duration": 0.251845,
+     "end_time": "2024-07-29T18:33:14.996629",
+     "exception": false,
+     "start_time": "2024-07-29T18:33:14.744784",
+     "status": "completed"
+    },
+    "tags": []
+   },
+   "outputs": [
+    {
+     "name": "stderr",
+     "output_type": "stream",
+     "text": [
+      "/tmp/ipykernel_24/652453293.py:2: SettingWithCopyWarning: \n",
+      "A value is trying to be set on a copy of a slice from a DataFrame.\n",
+      "Try using .loc[row_indexer,col_indexer] = value instead\n",
+      "\n",
+      "See the caveats in the documentation: https://pandas.pydata.org/pandas-docs/stable/user_guide/indexing.html#returning-a-view-versus-a-copy\n",
+      "  X_train['Vehicle_Age_1-2 Year'] = X_train['Vehicle_Age_1-2 Year'].astype(int)\n",
+      "/tmp/ipykernel_24/652453293.py:3: SettingWithCopyWarning: \n",
+      "A value is trying to be set on a copy of a slice from a DataFrame.\n",
+      "Try using .loc[row_indexer,col_indexer] = value instead\n",
+      "\n",
+      "See the caveats in the documentation: https://pandas.pydata.org/pandas-docs/stable/user_guide/indexing.html#returning-a-view-versus-a-copy\n",
+      "  X_train['Vehicle_Age_< 1 Year'] = X_train['Vehicle_Age_< 1 Year'].astype(int)\n",
+      "/tmp/ipykernel_24/652453293.py:4: SettingWithCopyWarning: \n",
+      "A value is trying to be set on a copy of a slice from a DataFrame.\n",
+      "Try using .loc[row_indexer,col_indexer] = value instead\n",
+      "\n",
+      "See the caveats in the documentation: https://pandas.pydata.org/pandas-docs/stable/user_guide/indexing.html#returning-a-view-versus-a-copy\n",
+      "  X_train['Vehicle_Age_> 2 Years'] = X_train['Vehicle_Age_> 2 Years'].astype(int)\n",
+      "/tmp/ipykernel_24/652453293.py:5: SettingWithCopyWarning: \n",
+      "A value is trying to be set on a copy of a slice from a DataFrame.\n",
+      "Try using .loc[row_indexer,col_indexer] = value instead\n",
+      "\n",
+      "See the caveats in the documentation: https://pandas.pydata.org/pandas-docs/stable/user_guide/indexing.html#returning-a-view-versus-a-copy\n",
+      "  X_train['Gender_Male'] = X_train['Gender_Male'].astype(int)\n"
+     ]
+    },
+    {
+     "data": {
+      "text/html": [
+       "<div>\n",
+       "<style scoped>\n",
+       "    .dataframe tbody tr th:only-of-type {\n",
+       "        vertical-align: middle;\n",
+       "    }\n",
+       "\n",
+       "    .dataframe tbody tr th {\n",
+       "        vertical-align: top;\n",
+       "    }\n",
+       "\n",
+       "    .dataframe thead th {\n",
+       "        text-align: right;\n",
+       "    }\n",
+       "</style>\n",
+       "<table border=\"1\" class=\"dataframe\">\n",
+       "  <thead>\n",
+       "    <tr style=\"text-align: right;\">\n",
+       "      <th></th>\n",
+       "      <th>Age</th>\n",
+       "      <th>Driving_License</th>\n",
+       "      <th>Region_Code</th>\n",
+       "      <th>Previously_Insured</th>\n",
+       "      <th>Annual_Premium</th>\n",
+       "      <th>Policy_Sales_Channel</th>\n",
+       "      <th>Vintage</th>\n",
+       "      <th>Vehicle_Damages</th>\n",
+       "      <th>Vehicle_Age_1-2 Year</th>\n",
+       "      <th>Vehicle_Age_&lt; 1 Year</th>\n",
+       "      <th>Vehicle_Age_&gt; 2 Years</th>\n",
+       "      <th>Gender_Male</th>\n",
+       "    </tr>\n",
+       "  </thead>\n",
+       "  <tbody>\n",
+       "    <tr>\n",
+       "      <th>0</th>\n",
+       "      <td>21</td>\n",
+       "      <td>1</td>\n",
+       "      <td>35.0</td>\n",
+       "      <td>0</td>\n",
+       "      <td>65101.0</td>\n",
+       "      <td>124.0</td>\n",
+       "      <td>187</td>\n",
+       "      <td>1</td>\n",
+       "      <td>1</td>\n",
+       "      <td>0</td>\n",
+       "      <td>0</td>\n",
+       "      <td>1</td>\n",
+       "    </tr>\n",
+       "    <tr>\n",
+       "      <th>1</th>\n",
+       "      <td>43</td>\n",
+       "      <td>1</td>\n",
+       "      <td>28.0</td>\n",
+       "      <td>0</td>\n",
+       "      <td>58911.0</td>\n",
+       "      <td>26.0</td>\n",
+       "      <td>288</td>\n",
+       "      <td>1</td>\n",
+       "      <td>0</td>\n",
+       "      <td>0</td>\n",
+       "      <td>1</td>\n",
+       "      <td>1</td>\n",
+       "    </tr>\n",
+       "    <tr>\n",
+       "      <th>2</th>\n",
+       "      <td>25</td>\n",
+       "      <td>1</td>\n",
+       "      <td>14.0</td>\n",
+       "      <td>1</td>\n",
+       "      <td>38043.0</td>\n",
+       "      <td>152.0</td>\n",
+       "      <td>254</td>\n",
+       "      <td>0</td>\n",
+       "      <td>0</td>\n",
+       "      <td>1</td>\n",
+       "      <td>0</td>\n",
+       "      <td>0</td>\n",
+       "    </tr>\n",
+       "    <tr>\n",
+       "      <th>3</th>\n",
+       "      <td>35</td>\n",
+       "      <td>1</td>\n",
+       "      <td>1.0</td>\n",
+       "      <td>0</td>\n",
+       "      <td>2630.0</td>\n",
+       "      <td>156.0</td>\n",
+       "      <td>76</td>\n",
+       "      <td>1</td>\n",
+       "      <td>1</td>\n",
+       "      <td>0</td>\n",
+       "      <td>0</td>\n",
+       "      <td>0</td>\n",
+       "    </tr>\n",
+       "    <tr>\n",
+       "      <th>4</th>\n",
+       "      <td>36</td>\n",
+       "      <td>1</td>\n",
+       "      <td>15.0</td>\n",
+       "      <td>1</td>\n",
+       "      <td>31951.0</td>\n",
+       "      <td>152.0</td>\n",
+       "      <td>294</td>\n",
+       "      <td>0</td>\n",
+       "      <td>1</td>\n",
+       "      <td>0</td>\n",
+       "      <td>0</td>\n",
+       "      <td>0</td>\n",
+       "    </tr>\n",
+       "  </tbody>\n",
+       "</table>\n",
+       "</div>"
+      ],
+      "text/plain": [
+       "   Age  Driving_License  Region_Code  Previously_Insured  Annual_Premium  \\\n",
+       "0   21                1         35.0                   0         65101.0   \n",
+       "1   43                1         28.0                   0         58911.0   \n",
+       "2   25                1         14.0                   1         38043.0   \n",
+       "3   35                1          1.0                   0          2630.0   \n",
+       "4   36                1         15.0                   1         31951.0   \n",
+       "\n",
+       "   Policy_Sales_Channel  Vintage  Vehicle_Damages  Vehicle_Age_1-2 Year  \\\n",
+       "0                 124.0      187                1                     1   \n",
+       "1                  26.0      288                1                     0   \n",
+       "2                 152.0      254                0                     0   \n",
+       "3                 156.0       76                1                     1   \n",
+       "4                 152.0      294                0                     1   \n",
+       "\n",
+       "   Vehicle_Age_< 1 Year  Vehicle_Age_> 2 Years  Gender_Male  \n",
+       "0                     0                      0            1  \n",
+       "1                     0                      1            1  \n",
+       "2                     1                      0            0  \n",
+       "3                     0                      0            0  \n",
+       "4                     0                      0            0  "
+      ]
+     },
+     "execution_count": 16,
+     "metadata": {},
+     "output_type": "execute_result"
+    }
+   ],
+   "source": [
+    "# Convert boolean columns to integers in TRAINING DATA\n",
+    "X_train['Vehicle_Age_1-2 Year'] = X_train['Vehicle_Age_1-2 Year'].astype(int)\n",
+    "X_train['Vehicle_Age_< 1 Year'] = X_train['Vehicle_Age_< 1 Year'].astype(int)\n",
+    "X_train['Vehicle_Age_> 2 Years'] = X_train['Vehicle_Age_> 2 Years'].astype(int)\n",
+    "X_train['Gender_Male'] = X_train['Gender_Male'].astype(int)\n",
+    "X_train.head()"
+   ]
+  },
+  {
+   "cell_type": "code",
+   "execution_count": 17,
+   "id": "d42694a6",
+   "metadata": {
+    "execution": {
+     "iopub.execute_input": "2024-07-29T18:33:15.025305Z",
+     "iopub.status.busy": "2024-07-29T18:33:15.024997Z",
+     "iopub.status.idle": "2024-07-29T18:33:15.214273Z",
+     "shell.execute_reply": "2024-07-29T18:33:15.213334Z"
+    },
+    "papermill": {
+     "duration": 0.20584,
+     "end_time": "2024-07-29T18:33:15.216269",
+     "exception": false,
+     "start_time": "2024-07-29T18:33:15.010429",
+     "status": "completed"
+    },
+    "tags": []
+   },
+   "outputs": [
+    {
+     "data": {
+      "text/plain": [
+       "(7669866, 12)"
+      ]
+     },
+     "execution_count": 17,
+     "metadata": {},
+     "output_type": "execute_result"
+    }
+   ],
+   "source": [
+    "X_test = df_test[['Age', 'Driving_License', 'Region_Code', 'Previously_Insured', 'Annual_Premium', 'Policy_Sales_Channel', 'Vintage', 'Vehicle_Damages', 'Vehicle_Age_1-2 Year','Vehicle_Age_< 1 Year', 'Vehicle_Age_> 2 Years', 'Gender_Male']]\n",
+    "X_test.shape"
+   ]
+  },
+  {
+   "cell_type": "code",
+   "execution_count": 18,
+   "id": "14ec9615",
+   "metadata": {
+    "execution": {
+     "iopub.execute_input": "2024-07-29T18:33:15.245484Z",
+     "iopub.status.busy": "2024-07-29T18:33:15.244948Z",
+     "iopub.status.idle": "2024-07-29T18:33:15.441368Z",
+     "shell.execute_reply": "2024-07-29T18:33:15.440306Z"
+    },
+    "papermill": {
+     "duration": 0.213378,
+     "end_time": "2024-07-29T18:33:15.443759",
+     "exception": false,
+     "start_time": "2024-07-29T18:33:15.230381",
+     "status": "completed"
+    },
+    "tags": []
+   },
+   "outputs": [],
+   "source": [
+    "X_for_preds = df_test[['Age', 'Driving_License', 'Region_Code', 'Previously_Insured', 'Annual_Premium', 'Policy_Sales_Channel', 'Vintage', 'Vehicle_Damages', 'Vehicle_Age_1-2 Year','Vehicle_Age_< 1 Year', 'Vehicle_Age_> 2 Years', 'Gender_Male']]"
+   ]
+  },
+  {
+   "cell_type": "code",
+   "execution_count": 19,
+   "id": "c39abb53",
+   "metadata": {
+    "execution": {
+     "iopub.execute_input": "2024-07-29T18:33:15.473228Z",
+     "iopub.status.busy": "2024-07-29T18:33:15.472937Z",
+     "iopub.status.idle": "2024-07-29T18:33:15.637947Z",
+     "shell.execute_reply": "2024-07-29T18:33:15.636501Z"
+    },
+    "papermill": {
+     "duration": 0.182037,
+     "end_time": "2024-07-29T18:33:15.640139",
+     "exception": false,
+     "start_time": "2024-07-29T18:33:15.458102",
+     "status": "completed"
+    },
+    "tags": []
+   },
+   "outputs": [
+    {
+     "name": "stderr",
+     "output_type": "stream",
+     "text": [
+      "/tmp/ipykernel_24/2313824659.py:2: SettingWithCopyWarning: \n",
+      "A value is trying to be set on a copy of a slice from a DataFrame.\n",
+      "Try using .loc[row_indexer,col_indexer] = value instead\n",
+      "\n",
+      "See the caveats in the documentation: https://pandas.pydata.org/pandas-docs/stable/user_guide/indexing.html#returning-a-view-versus-a-copy\n",
+      "  X_for_preds['Vehicle_Age_1-2 Year'] = X_for_preds['Vehicle_Age_1-2 Year'].astype(int)\n",
+      "/tmp/ipykernel_24/2313824659.py:3: SettingWithCopyWarning: \n",
+      "A value is trying to be set on a copy of a slice from a DataFrame.\n",
+      "Try using .loc[row_indexer,col_indexer] = value instead\n",
+      "\n",
+      "See the caveats in the documentation: https://pandas.pydata.org/pandas-docs/stable/user_guide/indexing.html#returning-a-view-versus-a-copy\n",
+      "  X_for_preds['Vehicle_Age_< 1 Year'] = X_for_preds['Vehicle_Age_< 1 Year'].astype(int)\n",
+      "/tmp/ipykernel_24/2313824659.py:4: SettingWithCopyWarning: \n",
+      "A value is trying to be set on a copy of a slice from a DataFrame.\n",
+      "Try using .loc[row_indexer,col_indexer] = value instead\n",
+      "\n",
+      "See the caveats in the documentation: https://pandas.pydata.org/pandas-docs/stable/user_guide/indexing.html#returning-a-view-versus-a-copy\n",
+      "  X_for_preds['Vehicle_Age_> 2 Years'] = X_for_preds['Vehicle_Age_> 2 Years'].astype(int)\n",
+      "/tmp/ipykernel_24/2313824659.py:5: SettingWithCopyWarning: \n",
+      "A value is trying to be set on a copy of a slice from a DataFrame.\n",
+      "Try using .loc[row_indexer,col_indexer] = value instead\n",
+      "\n",
+      "See the caveats in the documentation: https://pandas.pydata.org/pandas-docs/stable/user_guide/indexing.html#returning-a-view-versus-a-copy\n",
+      "  X_for_preds['Gender_Male'] = X_for_preds['Gender_Male'].astype(int)\n"
+     ]
+    },
+    {
+     "data": {
+      "text/html": [
+       "<div>\n",
+       "<style scoped>\n",
+       "    .dataframe tbody tr th:only-of-type {\n",
+       "        vertical-align: middle;\n",
+       "    }\n",
+       "\n",
+       "    .dataframe tbody tr th {\n",
+       "        vertical-align: top;\n",
+       "    }\n",
+       "\n",
+       "    .dataframe thead th {\n",
+       "        text-align: right;\n",
+       "    }\n",
+       "</style>\n",
+       "<table border=\"1\" class=\"dataframe\">\n",
+       "  <thead>\n",
+       "    <tr style=\"text-align: right;\">\n",
+       "      <th></th>\n",
+       "      <th>Age</th>\n",
+       "      <th>Driving_License</th>\n",
+       "      <th>Region_Code</th>\n",
+       "      <th>Previously_Insured</th>\n",
+       "      <th>Annual_Premium</th>\n",
+       "      <th>Policy_Sales_Channel</th>\n",
+       "      <th>Vintage</th>\n",
+       "      <th>Vehicle_Damages</th>\n",
+       "      <th>Vehicle_Age_1-2 Year</th>\n",
+       "      <th>Vehicle_Age_&lt; 1 Year</th>\n",
+       "      <th>Vehicle_Age_&gt; 2 Years</th>\n",
+       "      <th>Gender_Male</th>\n",
+       "    </tr>\n",
+       "  </thead>\n",
+       "  <tbody>\n",
+       "    <tr>\n",
+       "      <th>0</th>\n",
+       "      <td>20</td>\n",
+       "      <td>1</td>\n",
+       "      <td>47.0</td>\n",
+       "      <td>0</td>\n",
+       "      <td>2630.0</td>\n",
+       "      <td>160.0</td>\n",
+       "      <td>228</td>\n",
+       "      <td>0</td>\n",
+       "      <td>0</td>\n",
+       "      <td>1</td>\n",
+       "      <td>0</td>\n",
+       "      <td>0</td>\n",
+       "    </tr>\n",
+       "    <tr>\n",
+       "      <th>1</th>\n",
+       "      <td>47</td>\n",
+       "      <td>1</td>\n",
+       "      <td>28.0</td>\n",
+       "      <td>0</td>\n",
+       "      <td>37483.0</td>\n",
+       "      <td>124.0</td>\n",
+       "      <td>123</td>\n",
+       "      <td>1</td>\n",
+       "      <td>1</td>\n",
+       "      <td>0</td>\n",
+       "      <td>0</td>\n",
+       "      <td>1</td>\n",
+       "    </tr>\n",
+       "    <tr>\n",
+       "      <th>2</th>\n",
+       "      <td>47</td>\n",
+       "      <td>1</td>\n",
+       "      <td>43.0</td>\n",
+       "      <td>0</td>\n",
+       "      <td>2630.0</td>\n",
+       "      <td>26.0</td>\n",
+       "      <td>271</td>\n",
+       "      <td>1</td>\n",
+       "      <td>1</td>\n",
+       "      <td>0</td>\n",
+       "      <td>0</td>\n",
+       "      <td>1</td>\n",
+       "    </tr>\n",
+       "    <tr>\n",
+       "      <th>3</th>\n",
+       "      <td>22</td>\n",
+       "      <td>1</td>\n",
+       "      <td>47.0</td>\n",
+       "      <td>1</td>\n",
+       "      <td>24502.0</td>\n",
+       "      <td>152.0</td>\n",
+       "      <td>115</td>\n",
+       "      <td>0</td>\n",
+       "      <td>0</td>\n",
+       "      <td>1</td>\n",
+       "      <td>0</td>\n",
+       "      <td>0</td>\n",
+       "    </tr>\n",
+       "    <tr>\n",
+       "      <th>4</th>\n",
+       "      <td>51</td>\n",
+       "      <td>1</td>\n",
+       "      <td>19.0</td>\n",
+       "      <td>0</td>\n",
+       "      <td>34115.0</td>\n",
+       "      <td>124.0</td>\n",
+       "      <td>148</td>\n",
+       "      <td>0</td>\n",
+       "      <td>1</td>\n",
+       "      <td>0</td>\n",
+       "      <td>0</td>\n",
+       "      <td>1</td>\n",
+       "    </tr>\n",
+       "  </tbody>\n",
+       "</table>\n",
+       "</div>"
+      ],
+      "text/plain": [
+       "   Age  Driving_License  Region_Code  Previously_Insured  Annual_Premium  \\\n",
+       "0   20                1         47.0                   0          2630.0   \n",
+       "1   47                1         28.0                   0         37483.0   \n",
+       "2   47                1         43.0                   0          2630.0   \n",
+       "3   22                1         47.0                   1         24502.0   \n",
+       "4   51                1         19.0                   0         34115.0   \n",
+       "\n",
+       "   Policy_Sales_Channel  Vintage  Vehicle_Damages  Vehicle_Age_1-2 Year  \\\n",
+       "0                 160.0      228                0                     0   \n",
+       "1                 124.0      123                1                     1   \n",
+       "2                  26.0      271                1                     1   \n",
+       "3                 152.0      115                0                     0   \n",
+       "4                 124.0      148                0                     1   \n",
+       "\n",
+       "   Vehicle_Age_< 1 Year  Vehicle_Age_> 2 Years  Gender_Male  \n",
+       "0                     1                      0            0  \n",
+       "1                     0                      0            1  \n",
+       "2                     0                      0            1  \n",
+       "3                     1                      0            0  \n",
+       "4                     0                      0            1  "
+      ]
+     },
+     "execution_count": 19,
+     "metadata": {},
+     "output_type": "execute_result"
+    }
+   ],
+   "source": [
+    "# Convert boolean columns to integers in TRAINING DATA\n",
+    "X_for_preds['Vehicle_Age_1-2 Year'] = X_for_preds['Vehicle_Age_1-2 Year'].astype(int)\n",
+    "X_for_preds['Vehicle_Age_< 1 Year'] = X_for_preds['Vehicle_Age_< 1 Year'].astype(int)\n",
+    "X_for_preds['Vehicle_Age_> 2 Years'] = X_for_preds['Vehicle_Age_> 2 Years'].astype(int)\n",
+    "X_for_preds['Gender_Male'] = X_for_preds['Gender_Male'].astype(int)\n",
+    "X_for_preds.head()"
+   ]
+  },
+  {
+   "cell_type": "code",
+   "execution_count": 20,
+   "id": "3090a7d0",
+   "metadata": {
+    "execution": {
+     "iopub.execute_input": "2024-07-29T18:33:15.669886Z",
+     "iopub.status.busy": "2024-07-29T18:33:15.669617Z",
+     "iopub.status.idle": "2024-07-29T18:33:15.902051Z",
+     "shell.execute_reply": "2024-07-29T18:33:15.901222Z"
+    },
+    "papermill": {
+     "duration": 0.249808,
+     "end_time": "2024-07-29T18:33:15.904460",
+     "exception": false,
+     "start_time": "2024-07-29T18:33:15.654652",
+     "status": "completed"
+    },
+    "tags": []
+   },
+   "outputs": [],
+   "source": [
+    "X_for_preds = X_for_preds.to_numpy()"
+   ]
+  },
+  {
+   "cell_type": "markdown",
+   "id": "1539ec09",
+   "metadata": {
+    "papermill": {
+     "duration": 0.054172,
+     "end_time": "2024-07-29T18:33:15.973380",
+     "exception": false,
+     "start_time": "2024-07-29T18:33:15.919208",
+     "status": "completed"
+    },
+    "tags": []
+   },
+   "source": [
+    "# TENSOR FOR PREDS"
+   ]
+  },
+  {
+   "cell_type": "code",
+   "execution_count": 21,
+   "id": "486664f5",
+   "metadata": {
+    "execution": {
+     "iopub.execute_input": "2024-07-29T18:33:16.003239Z",
+     "iopub.status.busy": "2024-07-29T18:33:16.002579Z",
+     "iopub.status.idle": "2024-07-29T18:33:16.172972Z",
+     "shell.execute_reply": "2024-07-29T18:33:16.172021Z"
+    },
+    "papermill": {
+     "duration": 0.187576,
+     "end_time": "2024-07-29T18:33:16.175027",
+     "exception": false,
+     "start_time": "2024-07-29T18:33:15.987451",
+     "status": "completed"
+    },
+    "tags": []
+   },
+   "outputs": [
+    {
+     "data": {
+      "text/plain": [
+       "torch.Size([7669866, 12])"
+      ]
+     },
+     "execution_count": 21,
+     "metadata": {},
+     "output_type": "execute_result"
+    }
+   ],
+   "source": [
+    "X_for_preds_tensor = torch.tensor(X_for_preds, dtype = torch.float32)\n",
+    "X_for_preds_tensor.shape"
+   ]
+  },
+  {
+   "cell_type": "code",
+   "execution_count": 22,
+   "id": "9acfad6d",
+   "metadata": {
+    "execution": {
+     "iopub.execute_input": "2024-07-29T18:33:16.205446Z",
+     "iopub.status.busy": "2024-07-29T18:33:16.204820Z",
+     "iopub.status.idle": "2024-07-29T18:33:16.370780Z",
+     "shell.execute_reply": "2024-07-29T18:33:16.369440Z"
+    },
+    "papermill": {
+     "duration": 0.183913,
+     "end_time": "2024-07-29T18:33:16.373550",
+     "exception": false,
+     "start_time": "2024-07-29T18:33:16.189637",
+     "status": "completed"
+    },
+    "tags": []
+   },
+   "outputs": [
+    {
+     "name": "stderr",
+     "output_type": "stream",
+     "text": [
+      "/tmp/ipykernel_24/3387154724.py:2: SettingWithCopyWarning: \n",
+      "A value is trying to be set on a copy of a slice from a DataFrame.\n",
+      "Try using .loc[row_indexer,col_indexer] = value instead\n",
+      "\n",
+      "See the caveats in the documentation: https://pandas.pydata.org/pandas-docs/stable/user_guide/indexing.html#returning-a-view-versus-a-copy\n",
+      "  X_test['Vehicle_Age_1-2 Year'] = X_test['Vehicle_Age_1-2 Year'].astype(int)\n",
+      "/tmp/ipykernel_24/3387154724.py:3: SettingWithCopyWarning: \n",
+      "A value is trying to be set on a copy of a slice from a DataFrame.\n",
+      "Try using .loc[row_indexer,col_indexer] = value instead\n",
+      "\n",
+      "See the caveats in the documentation: https://pandas.pydata.org/pandas-docs/stable/user_guide/indexing.html#returning-a-view-versus-a-copy\n",
+      "  X_test['Vehicle_Age_< 1 Year'] = X_test['Vehicle_Age_< 1 Year'].astype(int)\n",
+      "/tmp/ipykernel_24/3387154724.py:4: SettingWithCopyWarning: \n",
+      "A value is trying to be set on a copy of a slice from a DataFrame.\n",
+      "Try using .loc[row_indexer,col_indexer] = value instead\n",
+      "\n",
+      "See the caveats in the documentation: https://pandas.pydata.org/pandas-docs/stable/user_guide/indexing.html#returning-a-view-versus-a-copy\n",
+      "  X_test['Vehicle_Age_> 2 Years'] = X_test['Vehicle_Age_> 2 Years'].astype(int)\n",
+      "/tmp/ipykernel_24/3387154724.py:5: SettingWithCopyWarning: \n",
+      "A value is trying to be set on a copy of a slice from a DataFrame.\n",
+      "Try using .loc[row_indexer,col_indexer] = value instead\n",
+      "\n",
+      "See the caveats in the documentation: https://pandas.pydata.org/pandas-docs/stable/user_guide/indexing.html#returning-a-view-versus-a-copy\n",
+      "  X_test['Gender_Male'] = X_test['Gender_Male'].astype(int)\n"
+     ]
+    },
+    {
+     "data": {
+      "text/html": [
+       "<div>\n",
+       "<style scoped>\n",
+       "    .dataframe tbody tr th:only-of-type {\n",
+       "        vertical-align: middle;\n",
+       "    }\n",
+       "\n",
+       "    .dataframe tbody tr th {\n",
+       "        vertical-align: top;\n",
+       "    }\n",
+       "\n",
+       "    .dataframe thead th {\n",
+       "        text-align: right;\n",
+       "    }\n",
+       "</style>\n",
+       "<table border=\"1\" class=\"dataframe\">\n",
+       "  <thead>\n",
+       "    <tr style=\"text-align: right;\">\n",
+       "      <th></th>\n",
+       "      <th>Age</th>\n",
+       "      <th>Driving_License</th>\n",
+       "      <th>Region_Code</th>\n",
+       "      <th>Previously_Insured</th>\n",
+       "      <th>Annual_Premium</th>\n",
+       "      <th>Policy_Sales_Channel</th>\n",
+       "      <th>Vintage</th>\n",
+       "      <th>Vehicle_Damages</th>\n",
+       "      <th>Vehicle_Age_1-2 Year</th>\n",
+       "      <th>Vehicle_Age_&lt; 1 Year</th>\n",
+       "      <th>Vehicle_Age_&gt; 2 Years</th>\n",
+       "      <th>Gender_Male</th>\n",
+       "    </tr>\n",
+       "  </thead>\n",
+       "  <tbody>\n",
+       "    <tr>\n",
+       "      <th>0</th>\n",
+       "      <td>20</td>\n",
+       "      <td>1</td>\n",
+       "      <td>47.0</td>\n",
+       "      <td>0</td>\n",
+       "      <td>2630.0</td>\n",
+       "      <td>160.0</td>\n",
+       "      <td>228</td>\n",
+       "      <td>0</td>\n",
+       "      <td>0</td>\n",
+       "      <td>1</td>\n",
+       "      <td>0</td>\n",
+       "      <td>0</td>\n",
+       "    </tr>\n",
+       "    <tr>\n",
+       "      <th>1</th>\n",
+       "      <td>47</td>\n",
+       "      <td>1</td>\n",
+       "      <td>28.0</td>\n",
+       "      <td>0</td>\n",
+       "      <td>37483.0</td>\n",
+       "      <td>124.0</td>\n",
+       "      <td>123</td>\n",
+       "      <td>1</td>\n",
+       "      <td>1</td>\n",
+       "      <td>0</td>\n",
+       "      <td>0</td>\n",
+       "      <td>1</td>\n",
+       "    </tr>\n",
+       "    <tr>\n",
+       "      <th>2</th>\n",
+       "      <td>47</td>\n",
+       "      <td>1</td>\n",
+       "      <td>43.0</td>\n",
+       "      <td>0</td>\n",
+       "      <td>2630.0</td>\n",
+       "      <td>26.0</td>\n",
+       "      <td>271</td>\n",
+       "      <td>1</td>\n",
+       "      <td>1</td>\n",
+       "      <td>0</td>\n",
+       "      <td>0</td>\n",
+       "      <td>1</td>\n",
+       "    </tr>\n",
+       "    <tr>\n",
+       "      <th>3</th>\n",
+       "      <td>22</td>\n",
+       "      <td>1</td>\n",
+       "      <td>47.0</td>\n",
+       "      <td>1</td>\n",
+       "      <td>24502.0</td>\n",
+       "      <td>152.0</td>\n",
+       "      <td>115</td>\n",
+       "      <td>0</td>\n",
+       "      <td>0</td>\n",
+       "      <td>1</td>\n",
+       "      <td>0</td>\n",
+       "      <td>0</td>\n",
+       "    </tr>\n",
+       "    <tr>\n",
+       "      <th>4</th>\n",
+       "      <td>51</td>\n",
+       "      <td>1</td>\n",
+       "      <td>19.0</td>\n",
+       "      <td>0</td>\n",
+       "      <td>34115.0</td>\n",
+       "      <td>124.0</td>\n",
+       "      <td>148</td>\n",
+       "      <td>0</td>\n",
+       "      <td>1</td>\n",
+       "      <td>0</td>\n",
+       "      <td>0</td>\n",
+       "      <td>1</td>\n",
+       "    </tr>\n",
+       "  </tbody>\n",
+       "</table>\n",
+       "</div>"
+      ],
+      "text/plain": [
+       "   Age  Driving_License  Region_Code  Previously_Insured  Annual_Premium  \\\n",
+       "0   20                1         47.0                   0          2630.0   \n",
+       "1   47                1         28.0                   0         37483.0   \n",
+       "2   47                1         43.0                   0          2630.0   \n",
+       "3   22                1         47.0                   1         24502.0   \n",
+       "4   51                1         19.0                   0         34115.0   \n",
+       "\n",
+       "   Policy_Sales_Channel  Vintage  Vehicle_Damages  Vehicle_Age_1-2 Year  \\\n",
+       "0                 160.0      228                0                     0   \n",
+       "1                 124.0      123                1                     1   \n",
+       "2                  26.0      271                1                     1   \n",
+       "3                 152.0      115                0                     0   \n",
+       "4                 124.0      148                0                     1   \n",
+       "\n",
+       "   Vehicle_Age_< 1 Year  Vehicle_Age_> 2 Years  Gender_Male  \n",
+       "0                     1                      0            0  \n",
+       "1                     0                      0            1  \n",
+       "2                     0                      0            1  \n",
+       "3                     1                      0            0  \n",
+       "4                     0                      0            1  "
+      ]
+     },
+     "execution_count": 22,
+     "metadata": {},
+     "output_type": "execute_result"
+    }
+   ],
+   "source": [
+    "# Convert boolean columns to integers in TRAINING DATA\n",
+    "X_test['Vehicle_Age_1-2 Year'] = X_test['Vehicle_Age_1-2 Year'].astype(int)\n",
+    "X_test['Vehicle_Age_< 1 Year'] = X_test['Vehicle_Age_< 1 Year'].astype(int)\n",
+    "X_test['Vehicle_Age_> 2 Years'] = X_test['Vehicle_Age_> 2 Years'].astype(int)\n",
+    "X_test['Gender_Male'] = X_test['Gender_Male'].astype(int)\n",
+    "X_test.head()"
+   ]
+  },
+  {
+   "cell_type": "code",
+   "execution_count": 23,
+   "id": "7d751f50",
+   "metadata": {
+    "execution": {
+     "iopub.execute_input": "2024-07-29T18:33:16.404245Z",
+     "iopub.status.busy": "2024-07-29T18:33:16.403964Z",
+     "iopub.status.idle": "2024-07-29T18:34:53.272065Z",
+     "shell.execute_reply": "2024-07-29T18:34:53.270819Z"
+    },
+    "papermill": {
+     "duration": 96.90034,
+     "end_time": "2024-07-29T18:34:53.288758",
+     "exception": false,
+     "start_time": "2024-07-29T18:33:16.388418",
+     "status": "completed"
+    },
+    "tags": []
+   },
+   "outputs": [
+    {
+     "name": "stdout",
+     "output_type": "stream",
+     "text": [
+      "Response\n",
+      "0    10089739\n",
+      "1     1415059\n",
+      "Name: count, dtype: int64\n",
+      "\n",
+      "Response\n",
+      "0    10089739\n",
+      "1    10089739\n",
+      "Name: count, dtype: int64\n"
+     ]
+    }
+   ],
+   "source": [
+    "smote = SMOTE()\n",
+    "X_train_smote, y_train_smote = smote.fit_resample(X_train, y_train)\n",
+    "print(y_train.value_counts())\n",
+    "print()\n",
+    "print(y_train_smote.value_counts())"
+   ]
+  },
+  {
+   "cell_type": "markdown",
+   "id": "28893dd7",
+   "metadata": {
+    "papermill": {
+     "duration": 0.015253,
+     "end_time": "2024-07-29T18:34:53.318742",
+     "exception": false,
+     "start_time": "2024-07-29T18:34:53.303489",
+     "status": "completed"
+    },
+    "tags": []
+   },
+   "source": [
+    "# Scalling Data"
+   ]
+  },
+  {
+   "cell_type": "code",
+   "execution_count": 24,
+   "id": "d8730f37",
+   "metadata": {
+    "execution": {
+     "iopub.execute_input": "2024-07-29T18:34:53.349523Z",
+     "iopub.status.busy": "2024-07-29T18:34:53.349140Z",
+     "iopub.status.idle": "2024-07-29T18:34:53.353299Z",
+     "shell.execute_reply": "2024-07-29T18:34:53.352452Z"
+    },
+    "papermill": {
+     "duration": 0.021726,
+     "end_time": "2024-07-29T18:34:53.355152",
+     "exception": false,
+     "start_time": "2024-07-29T18:34:53.333426",
+     "status": "completed"
+    },
+    "tags": []
+   },
+   "outputs": [],
+   "source": [
+    "scaler = StandardScaler()"
+   ]
+  },
+  {
+   "cell_type": "code",
+   "execution_count": 25,
+   "id": "a1656170",
+   "metadata": {
+    "execution": {
+     "iopub.execute_input": "2024-07-29T18:34:53.385568Z",
+     "iopub.status.busy": "2024-07-29T18:34:53.385297Z",
+     "iopub.status.idle": "2024-07-29T18:34:58.156782Z",
+     "shell.execute_reply": "2024-07-29T18:34:58.155770Z"
+    },
+    "papermill": {
+     "duration": 4.789391,
+     "end_time": "2024-07-29T18:34:58.159316",
+     "exception": false,
+     "start_time": "2024-07-29T18:34:53.369925",
+     "status": "completed"
+    },
+    "tags": []
+   },
+   "outputs": [
+    {
+     "name": "stderr",
+     "output_type": "stream",
+     "text": [
+      "/opt/conda/lib/python3.10/site-packages/sklearn/base.py:439: UserWarning: X does not have valid feature names, but StandardScaler was fitted with feature names\n",
+      "  warnings.warn(\n"
+     ]
+    }
+   ],
+   "source": [
+    "X_train_scaled = scaler.fit_transform(X_train_smote)\n",
+    "X_for_preds_tensor = scaler.transform(X_for_preds_tensor)\n",
+    "X_for_preds_tensor = torch.tensor(X_for_preds_tensor, dtype = torch.float32)"
+   ]
+  },
+  {
+   "cell_type": "code",
+   "execution_count": 26,
+   "id": "5fabb834",
+   "metadata": {
+    "execution": {
+     "iopub.execute_input": "2024-07-29T18:34:58.191682Z",
+     "iopub.status.busy": "2024-07-29T18:34:58.191366Z",
+     "iopub.status.idle": "2024-07-29T18:35:03.006524Z",
+     "shell.execute_reply": "2024-07-29T18:35:03.005739Z"
+    },
+    "papermill": {
+     "duration": 4.833201,
+     "end_time": "2024-07-29T18:35:03.008809",
+     "exception": false,
+     "start_time": "2024-07-29T18:34:58.175608",
+     "status": "completed"
+    },
+    "tags": []
+   },
+   "outputs": [],
+   "source": [
+    "from sklearn.model_selection import train_test_split\n",
+    "X_train, X_test, y_train, y_test = train_test_split(X_train_scaled, y_train_smote, test_size=0.3, random_state=42)"
+   ]
+  },
+  {
+   "cell_type": "code",
+   "execution_count": 27,
+   "id": "8b4f20d3",
+   "metadata": {
+    "execution": {
+     "iopub.execute_input": "2024-07-29T18:35:03.040229Z",
+     "iopub.status.busy": "2024-07-29T18:35:03.039919Z",
+     "iopub.status.idle": "2024-07-29T18:35:03.044943Z",
+     "shell.execute_reply": "2024-07-29T18:35:03.043912Z"
+    },
+    "papermill": {
+     "duration": 0.022813,
+     "end_time": "2024-07-29T18:35:03.046900",
+     "exception": false,
+     "start_time": "2024-07-29T18:35:03.024087",
+     "status": "completed"
+    },
+    "tags": []
+   },
+   "outputs": [
+    {
+     "name": "stdout",
+     "output_type": "stream",
+     "text": [
+      "(14125634, 12) (14125634,) (6053844, 12) (6053844,)\n"
+     ]
+    }
+   ],
+   "source": [
+    "print(X_train.shape, y_train.shape, X_test.shape, y_test.shape)"
+   ]
+  },
+  {
+   "cell_type": "markdown",
+   "id": "c671e713",
+   "metadata": {
+    "papermill": {
+     "duration": 0.014506,
+     "end_time": "2024-07-29T18:35:03.076308",
+     "exception": false,
+     "start_time": "2024-07-29T18:35:03.061802",
+     "status": "completed"
+    },
+    "tags": []
+   },
+   "source": [
+    "# DATA to TENSOR"
+   ]
+  },
+  {
+   "cell_type": "code",
+   "execution_count": 28,
+   "id": "d718b984",
+   "metadata": {
+    "execution": {
+     "iopub.execute_input": "2024-07-29T18:35:03.107173Z",
+     "iopub.status.busy": "2024-07-29T18:35:03.106885Z",
+     "iopub.status.idle": "2024-07-29T18:35:03.111453Z",
+     "shell.execute_reply": "2024-07-29T18:35:03.110578Z"
+    },
+    "papermill": {
+     "duration": 0.02223,
+     "end_time": "2024-07-29T18:35:03.113281",
+     "exception": false,
+     "start_time": "2024-07-29T18:35:03.091051",
+     "status": "completed"
+    },
+    "tags": []
+   },
+   "outputs": [],
+   "source": [
+    "y_train = y_train.to_numpy()\n",
+    "y_test = y_test.to_numpy()"
+   ]
+  },
+  {
+   "cell_type": "code",
+   "execution_count": 29,
+   "id": "8d5ca242",
+   "metadata": {
+    "execution": {
+     "iopub.execute_input": "2024-07-29T18:35:03.143901Z",
+     "iopub.status.busy": "2024-07-29T18:35:03.143660Z",
+     "iopub.status.idle": "2024-07-29T18:35:03.548843Z",
+     "shell.execute_reply": "2024-07-29T18:35:03.547982Z"
+    },
+    "papermill": {
+     "duration": 0.423333,
+     "end_time": "2024-07-29T18:35:03.551254",
+     "exception": false,
+     "start_time": "2024-07-29T18:35:03.127921",
+     "status": "completed"
+    },
+    "tags": []
+   },
+   "outputs": [],
+   "source": [
+    "X_train_tensor = torch.tensor(X_train, dtype = torch.float32)\n",
+    "y_train_tensor = torch.tensor(y_train, dtype = torch.float32)\n",
+    "X_test_tensor = torch.tensor(X_test, dtype = torch.float32)\n",
+    "y_test_tensor = torch.tensor(y_test, dtype = torch.float32)"
+   ]
+  },
+  {
+   "cell_type": "code",
+   "execution_count": 30,
+   "id": "fd79064a",
+   "metadata": {
+    "execution": {
+     "iopub.execute_input": "2024-07-29T18:35:03.584602Z",
+     "iopub.status.busy": "2024-07-29T18:35:03.584251Z",
+     "iopub.status.idle": "2024-07-29T18:35:03.590622Z",
+     "shell.execute_reply": "2024-07-29T18:35:03.589790Z"
+    },
+    "papermill": {
+     "duration": 0.024602,
+     "end_time": "2024-07-29T18:35:03.592681",
+     "exception": false,
+     "start_time": "2024-07-29T18:35:03.568079",
+     "status": "completed"
+    },
+    "tags": []
+   },
+   "outputs": [],
+   "source": [
+    "# Custom dataset class\n",
+    "class CustomDataset(Dataset):\n",
+    "    def __init__(self, X, y=None):\n",
+    "        self.X = X\n",
+    "        self.y = y\n",
+    "\n",
+    "    def __len__(self):\n",
+    "        return len(self.X)\n",
+    "\n",
+    "    def __getitem__(self, idx):\n",
+    "        \n",
+    "        try:\n",
+    "            if self.y is not None:\n",
+    "                return self.X[idx], self.y[idx]\n",
+    "            else:\n",
+    "                return self.X[idx]\n",
+    "        except Exception as e:\n",
+    "            print(f\"Exception in __getitem__: {e}\")\n",
+    "            raise"
+   ]
+  },
+  {
+   "cell_type": "code",
+   "execution_count": 31,
+   "id": "6b833765",
+   "metadata": {
+    "execution": {
+     "iopub.execute_input": "2024-07-29T18:35:03.623650Z",
+     "iopub.status.busy": "2024-07-29T18:35:03.623130Z",
+     "iopub.status.idle": "2024-07-29T18:35:03.628756Z",
+     "shell.execute_reply": "2024-07-29T18:35:03.627862Z"
+    },
+    "papermill": {
+     "duration": 0.023223,
+     "end_time": "2024-07-29T18:35:03.630731",
+     "exception": false,
+     "start_time": "2024-07-29T18:35:03.607508",
+     "status": "completed"
+    },
+    "tags": []
+   },
+   "outputs": [],
+   "source": [
+    "train_dataset = CustomDataset(X_train_tensor, y_train_tensor)\n",
+    "test_dataset = CustomDataset(X_test_tensor, y_test_tensor)\n",
+    "\n",
+    "# Create DataLoaders\n",
+    "# train_loader = DataLoader(train_dataset, batch_size=64,shuffle=True,pin_memory=True)\n",
+    "# test_loader = DataLoader(test_dataset, batch_size=64,shuffle=False, pin_memory=True)\n",
+    "train_loader = DataLoader(train_dataset, batch_size=640,shuffle=True,num_workers=3, pin_memory=True, persistent_workers=True)\n",
+    "test_loader = DataLoader(test_dataset, batch_size=640,shuffle=False,num_workers=3, pin_memory=True, persistent_workers=True)"
+   ]
+  },
+  {
+   "cell_type": "code",
+   "execution_count": 32,
+   "id": "6522661c",
+   "metadata": {
+    "execution": {
+     "iopub.execute_input": "2024-07-29T18:35:03.662650Z",
+     "iopub.status.busy": "2024-07-29T18:35:03.661772Z",
+     "iopub.status.idle": "2024-07-29T18:35:04.756733Z",
+     "shell.execute_reply": "2024-07-29T18:35:04.755573Z"
+    },
+    "papermill": {
+     "duration": 1.113345,
+     "end_time": "2024-07-29T18:35:04.759037",
+     "exception": false,
+     "start_time": "2024-07-29T18:35:03.645692",
+     "status": "completed"
+    },
+    "tags": []
+   },
+   "outputs": [
+    {
+     "name": "stdout",
+     "output_type": "stream",
+     "text": [
+      "Mon Jul 29 18:35:04 2024       \r\n",
+      "+-----------------------------------------------------------------------------------------+\r\n",
+      "| NVIDIA-SMI 550.90.07              Driver Version: 550.90.07      CUDA Version: 12.4     |\r\n",
+      "|-----------------------------------------+------------------------+----------------------+\r\n",
+      "| GPU  Name                 Persistence-M | Bus-Id          Disp.A | Volatile Uncorr. ECC |\r\n",
+      "| Fan  Temp   Perf          Pwr:Usage/Cap |           Memory-Usage | GPU-Util  Compute M. |\r\n",
+      "|                                         |                        |               MIG M. |\r\n",
+      "|=========================================+========================+======================|\r\n",
+      "|   0  Tesla P100-PCIE-16GB           Off |   00000000:00:04.0 Off |                    0 |\r\n",
+      "| N/A   38C    P0             26W /  250W |       0MiB /  16384MiB |      0%      Default |\r\n",
+      "|                                         |                        |                  N/A |\r\n",
+      "+-----------------------------------------+------------------------+----------------------+\r\n",
+      "                                                                                         \r\n",
+      "+-----------------------------------------------------------------------------------------+\r\n",
+      "| Processes:                                                                              |\r\n",
+      "|  GPU   GI   CI        PID   Type   Process name                              GPU Memory |\r\n",
+      "|        ID   ID                                                               Usage      |\r\n",
+      "|=========================================================================================|\r\n",
+      "|  No running processes found                                                             |\r\n",
+      "+-----------------------------------------------------------------------------------------+\r\n"
+     ]
+    }
+   ],
+   "source": [
+    "!nvidia-smi"
+   ]
+  },
+  {
+   "cell_type": "code",
+   "execution_count": 33,
+   "id": "4fb4b396",
+   "metadata": {
+    "execution": {
+     "iopub.execute_input": "2024-07-29T18:35:04.791149Z",
+     "iopub.status.busy": "2024-07-29T18:35:04.790571Z",
+     "iopub.status.idle": "2024-07-29T18:35:04.798383Z",
+     "shell.execute_reply": "2024-07-29T18:35:04.797492Z"
+    },
+    "papermill": {
+     "duration": 0.025771,
+     "end_time": "2024-07-29T18:35:04.800234",
+     "exception": false,
+     "start_time": "2024-07-29T18:35:04.774463",
+     "status": "completed"
+    },
+    "tags": []
+   },
+   "outputs": [],
+   "source": [
+    "# Model\n",
+    "class ModelV1(nn.Module):\n",
+    "    def __init__(self,\n",
+    "                 input_shape: int,\n",
+    "                 hidden_units: int,\n",
+    "                 output_shapes: int):\n",
+    "        super().__init__()\n",
+    "\n",
+    "        self.layer_stack = nn.Sequential(\n",
+    "            nn.Linear(in_features=input_shape, out_features=hidden_units),\n",
+    "            nn.ReLU(),\n",
+    "            nn.Linear(in_features=hidden_units, out_features=hidden_units),\n",
+    "            nn.ReLU(),\n",
+    "            nn.Linear(in_features=hidden_units, out_features=hidden_units),\n",
+    "            nn.ReLU(),\n",
+    "            nn.Linear(in_features=hidden_units, out_features=hidden_units),\n",
+    "            nn.ReLU(),\n",
+    "            nn.Linear(in_features=hidden_units, out_features=output_shapes)\n",
+    "        )\n",
+    "\n",
+    "    def forward(self, x: torch.Tensor):\n",
+    "        return self.layer_stack(x)"
+   ]
+  },
+  {
+   "cell_type": "code",
+   "execution_count": 34,
+   "id": "9e27142e",
+   "metadata": {
+    "execution": {
+     "iopub.execute_input": "2024-07-29T18:35:04.831706Z",
+     "iopub.status.busy": "2024-07-29T18:35:04.831399Z",
+     "iopub.status.idle": "2024-07-29T18:35:06.161990Z",
+     "shell.execute_reply": "2024-07-29T18:35:06.161168Z"
+    },
+    "papermill": {
+     "duration": 1.349077,
+     "end_time": "2024-07-29T18:35:06.164370",
+     "exception": false,
+     "start_time": "2024-07-29T18:35:04.815293",
+     "status": "completed"
+    },
+    "tags": []
+   },
+   "outputs": [],
+   "source": [
+    "model_1 = ModelV1(input_shape=12,\n",
+    "                  hidden_units=64,\n",
+    "                  output_shapes=1).to(device)\n",
+    "\n",
+    "\n",
+    "loss_fn = nn.BCEWithLogitsLoss()\n",
+    "\n",
+    "optimizer = torch.optim.SGD(params=model_1.parameters(),\n",
+    "                            lr=0.001)\n",
+    "# optimizer = torch.optim.SGD(params=model_1.parameters(),\n",
+    "#                             lr=0.001)\n",
+    "\n",
+    "def accuracy_fn(y_true, y_pred):\n",
+    "    correct = torch.eq(y_true, y_pred).sum().item()\n",
+    "    acc = (correct/len(y_pred))*100\n",
+    "    return acc"
+   ]
+  },
+  {
+   "cell_type": "code",
+   "execution_count": 35,
+   "id": "47b41e4b",
+   "metadata": {
+    "execution": {
+     "iopub.execute_input": "2024-07-29T18:35:06.197082Z",
+     "iopub.status.busy": "2024-07-29T18:35:06.196694Z",
+     "iopub.status.idle": "2024-07-29T20:10:05.810065Z",
+     "shell.execute_reply": "2024-07-29T20:10:05.808881Z"
+    },
+    "papermill": {
+     "duration": 5699.675222,
+     "end_time": "2024-07-29T20:10:05.855542",
+     "exception": false,
+     "start_time": "2024-07-29T18:35:06.180320",
+     "status": "completed"
+    },
+    "tags": []
+   },
+   "outputs": [
+    {
+     "name": "stdout",
+     "output_type": "stream",
+     "text": [
+      "\n",
+      "\n",
+      "\n",
+      "Epoch: 0\n",
+      "Looked at: 0/14125634 samples. | Loss: 0.69348 | Acc: 50.62%\n",
+      "Looked at: 2048000/14125634 samples. | Loss: 0.68945 | Acc: 56.88%\n",
+      "Looked at: 4096000/14125634 samples. | Loss: 0.67986 | Acc: 76.72%\n",
+      "Looked at: 6144000/14125634 samples. | Loss: 0.65680 | Acc: 77.50%\n",
+      "Looked at: 8192000/14125634 samples. | Loss: 0.58408 | Acc: 77.50%\n",
+      "Looked at: 10240000/14125634 samples. | Loss: 0.48203 | Acc: 76.88%\n",
+      "Looked at: 12288000/14125634 samples. | Loss: 0.41614 | Acc: 80.62%\n",
+      "\n",
+      "Average Train Loss in Epoch 0: 0.5809\n",
+      "\n",
+      "Average Test Loss in Epoch 0: 0.4074 | Test Accuracy: 79.99%\n",
+      "\n",
+      "\n",
+      "\n",
+      "Epoch: 1\n",
+      "Looked at: 0/14125634 samples. | Loss: 0.41620 | Acc: 77.97%\n",
+      "Looked at: 2048000/14125634 samples. | Loss: 0.41592 | Acc: 80.00%\n",
+      "Looked at: 4096000/14125634 samples. | Loss: 0.42081 | Acc: 78.28%\n",
+      "Looked at: 6144000/14125634 samples. | Loss: 0.35847 | Acc: 84.22%\n",
+      "Looked at: 8192000/14125634 samples. | Loss: 0.35110 | Acc: 83.28%\n",
+      "Looked at: 10240000/14125634 samples. | Loss: 0.38692 | Acc: 80.00%\n",
+      "Looked at: 12288000/14125634 samples. | Loss: 0.38381 | Acc: 81.09%\n",
+      "\n",
+      "Average Train Loss in Epoch 1: 0.3874\n",
+      "\n",
+      "Average Test Loss in Epoch 1: 0.3776 | Test Accuracy: 80.86%\n",
+      "\n",
+      "\n",
+      "\n",
+      "Epoch: 2\n",
+      "Looked at: 0/14125634 samples. | Loss: 0.35614 | Acc: 82.03%\n",
+      "Looked at: 2048000/14125634 samples. | Loss: 0.39939 | Acc: 79.06%\n",
+      "Looked at: 4096000/14125634 samples. | Loss: 0.38147 | Acc: 79.22%\n",
+      "Looked at: 6144000/14125634 samples. | Loss: 0.35861 | Acc: 82.50%\n",
+      "Looked at: 8192000/14125634 samples. | Loss: 0.37041 | Acc: 83.91%\n",
+      "Looked at: 10240000/14125634 samples. | Loss: 0.38451 | Acc: 81.41%\n",
+      "Looked at: 12288000/14125634 samples. | Loss: 0.37272 | Acc: 80.62%\n",
+      "\n",
+      "Average Train Loss in Epoch 2: 0.3750\n",
+      "\n",
+      "Average Test Loss in Epoch 2: 0.3728 | Test Accuracy: 81.04%\n",
+      "\n",
+      "\n",
+      "\n",
+      "Epoch: 3\n",
+      "Looked at: 0/14125634 samples. | Loss: 0.38510 | Acc: 80.47%\n",
+      "Looked at: 2048000/14125634 samples. | Loss: 0.36291 | Acc: 82.34%\n",
+      "Looked at: 4096000/14125634 samples. | Loss: 0.35812 | Acc: 82.81%\n",
+      "Looked at: 6144000/14125634 samples. | Loss: 0.36721 | Acc: 79.22%\n",
+      "Looked at: 8192000/14125634 samples. | Loss: 0.36700 | Acc: 79.84%\n",
+      "Looked at: 10240000/14125634 samples. | Loss: 0.38237 | Acc: 81.09%\n",
+      "Looked at: 12288000/14125634 samples. | Loss: 0.35359 | Acc: 81.56%\n",
+      "\n",
+      "Average Train Loss in Epoch 3: 0.3720\n",
+      "\n",
+      "Average Test Loss in Epoch 3: 0.3711 | Test Accuracy: 81.14%\n",
+      "\n",
+      "\n",
+      "\n",
+      "Epoch: 4\n",
+      "Looked at: 0/14125634 samples. | Loss: 0.37351 | Acc: 81.72%\n",
+      "Looked at: 2048000/14125634 samples. | Loss: 0.36605 | Acc: 82.81%\n",
+      "Looked at: 4096000/14125634 samples. | Loss: 0.38514 | Acc: 80.31%\n",
+      "Looked at: 6144000/14125634 samples. | Loss: 0.39995 | Acc: 78.75%\n",
+      "Looked at: 8192000/14125634 samples. | Loss: 0.35363 | Acc: 82.19%\n",
+      "Looked at: 10240000/14125634 samples. | Loss: 0.37712 | Acc: 80.62%\n",
+      "Looked at: 12288000/14125634 samples. | Loss: 0.38605 | Acc: 78.91%\n",
+      "\n",
+      "Average Train Loss in Epoch 4: 0.3709\n",
+      "\n",
+      "Average Test Loss in Epoch 4: 0.3703 | Test Accuracy: 81.19%\n",
+      "\n",
+      "\n",
+      "\n",
+      "Epoch: 5\n",
+      "Looked at: 0/14125634 samples. | Loss: 0.38632 | Acc: 79.22%\n",
+      "Looked at: 2048000/14125634 samples. | Loss: 0.37835 | Acc: 80.94%\n",
+      "Looked at: 4096000/14125634 samples. | Loss: 0.36418 | Acc: 82.50%\n",
+      "Looked at: 6144000/14125634 samples. | Loss: 0.37985 | Acc: 81.25%\n",
+      "Looked at: 8192000/14125634 samples. | Loss: 0.34836 | Acc: 81.41%\n",
+      "Looked at: 10240000/14125634 samples. | Loss: 0.34812 | Acc: 82.97%\n",
+      "Looked at: 12288000/14125634 samples. | Loss: 0.38529 | Acc: 79.06%\n",
+      "\n",
+      "Average Train Loss in Epoch 5: 0.3702\n",
+      "\n",
+      "Average Test Loss in Epoch 5: 0.3697 | Test Accuracy: 81.21%\n",
+      "\n",
+      "\n",
+      "\n",
+      "Epoch: 6\n",
+      "Looked at: 0/14125634 samples. | Loss: 0.36710 | Acc: 81.25%\n",
+      "Looked at: 2048000/14125634 samples. | Loss: 0.36549 | Acc: 82.19%\n",
+      "Looked at: 4096000/14125634 samples. | Loss: 0.37106 | Acc: 80.62%\n",
+      "Looked at: 6144000/14125634 samples. | Loss: 0.38653 | Acc: 81.09%\n",
+      "Looked at: 8192000/14125634 samples. | Loss: 0.34657 | Acc: 82.81%\n",
+      "Looked at: 10240000/14125634 samples. | Loss: 0.36520 | Acc: 81.09%\n",
+      "Looked at: 12288000/14125634 samples. | Loss: 0.37901 | Acc: 80.00%\n",
+      "\n",
+      "Average Train Loss in Epoch 6: 0.3698\n",
+      "\n",
+      "Average Test Loss in Epoch 6: 0.3694 | Test Accuracy: 81.24%\n",
+      "\n",
+      "\n",
+      "\n",
+      "Epoch: 7\n",
+      "Looked at: 0/14125634 samples. | Loss: 0.35230 | Acc: 82.50%\n",
+      "Looked at: 2048000/14125634 samples. | Loss: 0.35273 | Acc: 83.28%\n",
+      "Looked at: 4096000/14125634 samples. | Loss: 0.34115 | Acc: 82.66%\n",
+      "Looked at: 6144000/14125634 samples. | Loss: 0.36899 | Acc: 80.94%\n",
+      "Looked at: 8192000/14125634 samples. | Loss: 0.36564 | Acc: 81.72%\n",
+      "Looked at: 10240000/14125634 samples. | Loss: 0.38132 | Acc: 81.72%\n",
+      "Looked at: 12288000/14125634 samples. | Loss: 0.33519 | Acc: 82.81%\n",
+      "\n",
+      "Average Train Loss in Epoch 7: 0.3695\n",
+      "\n",
+      "Average Test Loss in Epoch 7: 0.3691 | Test Accuracy: 81.26%\n",
+      "\n",
+      "\n",
+      "\n",
+      "Epoch: 8\n",
+      "Looked at: 0/14125634 samples. | Loss: 0.36512 | Acc: 82.81%\n",
+      "Looked at: 2048000/14125634 samples. | Loss: 0.35878 | Acc: 81.41%\n",
+      "Looked at: 4096000/14125634 samples. | Loss: 0.38000 | Acc: 81.72%\n",
+      "Looked at: 6144000/14125634 samples. | Loss: 0.38910 | Acc: 80.78%\n",
+      "Looked at: 8192000/14125634 samples. | Loss: 0.38398 | Acc: 80.78%\n",
+      "Looked at: 10240000/14125634 samples. | Loss: 0.39345 | Acc: 81.56%\n",
+      "Looked at: 12288000/14125634 samples. | Loss: 0.38457 | Acc: 80.94%\n",
+      "\n",
+      "Average Train Loss in Epoch 8: 0.3692\n",
+      "\n",
+      "Average Test Loss in Epoch 8: 0.3688 | Test Accuracy: 81.26%\n",
+      "\n",
+      "\n",
+      "\n",
+      "Epoch: 9\n",
+      "Looked at: 0/14125634 samples. | Loss: 0.40517 | Acc: 78.28%\n",
+      "Looked at: 2048000/14125634 samples. | Loss: 0.37230 | Acc: 80.31%\n",
+      "Looked at: 4096000/14125634 samples. | Loss: 0.36637 | Acc: 81.25%\n",
+      "Looked at: 6144000/14125634 samples. | Loss: 0.38242 | Acc: 80.62%\n",
+      "Looked at: 8192000/14125634 samples. | Loss: 0.35182 | Acc: 82.81%\n",
+      "Looked at: 10240000/14125634 samples. | Loss: 0.36982 | Acc: 80.94%\n",
+      "Looked at: 12288000/14125634 samples. | Loss: 0.39036 | Acc: 80.00%\n",
+      "\n",
+      "Average Train Loss in Epoch 9: 0.3690\n",
+      "\n",
+      "Average Test Loss in Epoch 9: 0.3686 | Test Accuracy: 81.27%\n",
+      "\n",
+      "\n",
+      "\n",
+      "Epoch: 10\n",
+      "Looked at: 0/14125634 samples. | Loss: 0.37071 | Acc: 80.47%\n",
+      "Looked at: 2048000/14125634 samples. | Loss: 0.34626 | Acc: 84.06%\n",
+      "Looked at: 4096000/14125634 samples. | Loss: 0.33773 | Acc: 83.28%\n",
+      "Looked at: 6144000/14125634 samples. | Loss: 0.37225 | Acc: 80.62%\n",
+      "Looked at: 8192000/14125634 samples. | Loss: 0.35693 | Acc: 80.78%\n",
+      "Looked at: 10240000/14125634 samples. | Loss: 0.32610 | Acc: 83.91%\n",
+      "Looked at: 12288000/14125634 samples. | Loss: 0.38437 | Acc: 80.47%\n",
+      "\n",
+      "Average Train Loss in Epoch 10: 0.3688\n",
+      "\n",
+      "Average Test Loss in Epoch 10: 0.3685 | Test Accuracy: 81.28%\n",
+      "\n",
+      "\n",
+      "\n",
+      "Epoch: 11\n",
+      "Looked at: 0/14125634 samples. | Loss: 0.39089 | Acc: 79.06%\n",
+      "Looked at: 2048000/14125634 samples. | Loss: 0.39490 | Acc: 79.53%\n",
+      "Looked at: 4096000/14125634 samples. | Loss: 0.35543 | Acc: 79.69%\n",
+      "Looked at: 6144000/14125634 samples. | Loss: 0.38064 | Acc: 81.09%\n",
+      "Looked at: 8192000/14125634 samples. | Loss: 0.35201 | Acc: 82.50%\n",
+      "Looked at: 10240000/14125634 samples. | Loss: 0.39681 | Acc: 79.53%\n",
+      "Looked at: 12288000/14125634 samples. | Loss: 0.36624 | Acc: 82.66%\n",
+      "\n",
+      "Average Train Loss in Epoch 11: 0.3686\n",
+      "\n",
+      "Average Test Loss in Epoch 11: 0.3683 | Test Accuracy: 81.29%\n",
+      "\n",
+      "\n",
+      "\n",
+      "Epoch: 12\n",
+      "Looked at: 0/14125634 samples. | Loss: 0.37079 | Acc: 80.31%\n",
+      "Looked at: 2048000/14125634 samples. | Loss: 0.36200 | Acc: 81.41%\n",
+      "Looked at: 4096000/14125634 samples. | Loss: 0.35089 | Acc: 81.25%\n",
+      "Looked at: 6144000/14125634 samples. | Loss: 0.38315 | Acc: 80.62%\n",
+      "Looked at: 8192000/14125634 samples. | Loss: 0.38211 | Acc: 79.84%\n",
+      "Looked at: 10240000/14125634 samples. | Loss: 0.39024 | Acc: 77.81%\n",
+      "Looked at: 12288000/14125634 samples. | Loss: 0.36204 | Acc: 81.41%\n",
+      "\n",
+      "Average Train Loss in Epoch 12: 0.3685\n",
+      "\n",
+      "Average Test Loss in Epoch 12: 0.3681 | Test Accuracy: 81.30%\n",
+      "\n",
+      "\n",
+      "\n",
+      "Epoch: 13\n",
+      "Looked at: 0/14125634 samples. | Loss: 0.39763 | Acc: 80.31%\n",
+      "Looked at: 2048000/14125634 samples. | Loss: 0.37498 | Acc: 82.19%\n",
+      "Looked at: 4096000/14125634 samples. | Loss: 0.40018 | Acc: 78.12%\n",
+      "Looked at: 6144000/14125634 samples. | Loss: 0.36906 | Acc: 81.09%\n",
+      "Looked at: 8192000/14125634 samples. | Loss: 0.37657 | Acc: 79.53%\n",
+      "Looked at: 10240000/14125634 samples. | Loss: 0.37201 | Acc: 81.72%\n",
+      "Looked at: 12288000/14125634 samples. | Loss: 0.36368 | Acc: 81.25%\n",
+      "\n",
+      "Average Train Loss in Epoch 13: 0.3683\n",
+      "\n",
+      "Average Test Loss in Epoch 13: 0.3680 | Test Accuracy: 81.32%\n",
+      "\n",
+      "\n",
+      "\n",
+      "Epoch: 14\n",
+      "Looked at: 0/14125634 samples. | Loss: 0.36505 | Acc: 80.47%\n",
+      "Looked at: 2048000/14125634 samples. | Loss: 0.35735 | Acc: 81.25%\n",
+      "Looked at: 4096000/14125634 samples. | Loss: 0.35621 | Acc: 82.97%\n",
+      "Looked at: 6144000/14125634 samples. | Loss: 0.39176 | Acc: 81.41%\n",
+      "Looked at: 8192000/14125634 samples. | Loss: 0.36406 | Acc: 79.38%\n",
+      "Looked at: 10240000/14125634 samples. | Loss: 0.38678 | Acc: 81.25%\n",
+      "Looked at: 12288000/14125634 samples. | Loss: 0.39517 | Acc: 77.97%\n",
+      "\n",
+      "Average Train Loss in Epoch 14: 0.3682\n",
+      "\n",
+      "Average Test Loss in Epoch 14: 0.3679 | Test Accuracy: 81.32%\n",
+      "\n",
+      "\n",
+      "\n",
+      "Epoch: 15\n",
+      "Looked at: 0/14125634 samples. | Loss: 0.37483 | Acc: 81.72%\n",
+      "Looked at: 2048000/14125634 samples. | Loss: 0.36165 | Acc: 82.66%\n",
+      "Looked at: 4096000/14125634 samples. | Loss: 0.36735 | Acc: 80.31%\n",
+      "Looked at: 6144000/14125634 samples. | Loss: 0.35381 | Acc: 81.88%\n",
+      "Looked at: 8192000/14125634 samples. | Loss: 0.35972 | Acc: 81.88%\n",
+      "Looked at: 10240000/14125634 samples. | Loss: 0.36696 | Acc: 80.94%\n",
+      "Looked at: 12288000/14125634 samples. | Loss: 0.37656 | Acc: 81.72%\n",
+      "\n",
+      "Average Train Loss in Epoch 15: 0.3681\n",
+      "\n",
+      "Average Test Loss in Epoch 15: 0.3678 | Test Accuracy: 81.32%\n",
+      "\n",
+      "\n",
+      "\n",
+      "Epoch: 16\n",
+      "Looked at: 0/14125634 samples. | Loss: 0.37292 | Acc: 80.62%\n",
+      "Looked at: 2048000/14125634 samples. | Loss: 0.34740 | Acc: 83.44%\n",
+      "Looked at: 4096000/14125634 samples. | Loss: 0.33617 | Acc: 85.00%\n",
+      "Looked at: 6144000/14125634 samples. | Loss: 0.36453 | Acc: 82.03%\n",
+      "Looked at: 8192000/14125634 samples. | Loss: 0.38579 | Acc: 79.69%\n",
+      "Looked at: 10240000/14125634 samples. | Loss: 0.37658 | Acc: 81.72%\n",
+      "Looked at: 12288000/14125634 samples. | Loss: 0.33292 | Acc: 85.16%\n",
+      "\n",
+      "Average Train Loss in Epoch 16: 0.3680\n",
+      "\n",
+      "Average Test Loss in Epoch 16: 0.3677 | Test Accuracy: 81.33%\n",
+      "\n",
+      "\n",
+      "\n",
+      "Epoch: 17\n",
+      "Looked at: 0/14125634 samples. | Loss: 0.34978 | Acc: 84.22%\n",
+      "Looked at: 2048000/14125634 samples. | Loss: 0.35351 | Acc: 81.88%\n",
+      "Looked at: 4096000/14125634 samples. | Loss: 0.36434 | Acc: 82.03%\n",
+      "Looked at: 6144000/14125634 samples. | Loss: 0.35051 | Acc: 81.56%\n",
+      "Looked at: 8192000/14125634 samples. | Loss: 0.39221 | Acc: 79.38%\n",
+      "Looked at: 10240000/14125634 samples. | Loss: 0.39841 | Acc: 77.03%\n",
+      "Looked at: 12288000/14125634 samples. | Loss: 0.37523 | Acc: 79.69%\n",
+      "\n",
+      "Average Train Loss in Epoch 17: 0.3678\n",
+      "\n",
+      "Average Test Loss in Epoch 17: 0.3676 | Test Accuracy: 81.35%\n",
+      "\n",
+      "\n",
+      "\n",
+      "Epoch: 18\n",
+      "Looked at: 0/14125634 samples. | Loss: 0.37398 | Acc: 81.72%\n",
+      "Looked at: 2048000/14125634 samples. | Loss: 0.34867 | Acc: 82.97%\n",
+      "Looked at: 4096000/14125634 samples. | Loss: 0.37152 | Acc: 81.88%\n",
+      "Looked at: 6144000/14125634 samples. | Loss: 0.36409 | Acc: 81.41%\n",
+      "Looked at: 8192000/14125634 samples. | Loss: 0.36035 | Acc: 81.72%\n",
+      "Looked at: 10240000/14125634 samples. | Loss: 0.37739 | Acc: 80.16%\n",
+      "Looked at: 12288000/14125634 samples. | Loss: 0.36793 | Acc: 80.62%\n",
+      "\n",
+      "Average Train Loss in Epoch 18: 0.3677\n",
+      "\n",
+      "Average Test Loss in Epoch 18: 0.3675 | Test Accuracy: 81.35%\n",
+      "\n",
+      "\n",
+      "\n",
+      "Epoch: 19\n",
+      "Looked at: 0/14125634 samples. | Loss: 0.36022 | Acc: 83.44%\n",
+      "Looked at: 2048000/14125634 samples. | Loss: 0.35421 | Acc: 83.28%\n",
+      "Looked at: 4096000/14125634 samples. | Loss: 0.34827 | Acc: 82.50%\n",
+      "Looked at: 6144000/14125634 samples. | Loss: 0.36121 | Acc: 81.25%\n",
+      "Looked at: 8192000/14125634 samples. | Loss: 0.32419 | Acc: 83.75%\n",
+      "Looked at: 10240000/14125634 samples. | Loss: 0.35754 | Acc: 79.84%\n",
+      "Looked at: 12288000/14125634 samples. | Loss: 0.38252 | Acc: 80.31%\n",
+      "\n",
+      "Average Train Loss in Epoch 19: 0.3676\n",
+      "\n",
+      "Average Test Loss in Epoch 19: 0.3674 | Test Accuracy: 81.36%\n",
+      "\n",
+      "\n",
+      "\n",
+      "Epoch: 20\n",
+      "Looked at: 0/14125634 samples. | Loss: 0.34422 | Acc: 83.44%\n",
+      "Looked at: 2048000/14125634 samples. | Loss: 0.35243 | Acc: 82.34%\n",
+      "Looked at: 4096000/14125634 samples. | Loss: 0.35612 | Acc: 81.72%\n",
+      "Looked at: 6144000/14125634 samples. | Loss: 0.38175 | Acc: 79.84%\n",
+      "Looked at: 8192000/14125634 samples. | Loss: 0.35463 | Acc: 81.25%\n",
+      "Looked at: 10240000/14125634 samples. | Loss: 0.37681 | Acc: 80.62%\n",
+      "Looked at: 12288000/14125634 samples. | Loss: 0.37111 | Acc: 80.31%\n",
+      "\n",
+      "Average Train Loss in Epoch 20: 0.3675\n",
+      "\n",
+      "Average Test Loss in Epoch 20: 0.3673 | Test Accuracy: 81.37%\n",
+      "\n",
+      "\n",
+      "\n",
+      "Epoch: 21\n",
+      "Looked at: 0/14125634 samples. | Loss: 0.35441 | Acc: 82.50%\n",
+      "Looked at: 2048000/14125634 samples. | Loss: 0.38522 | Acc: 80.00%\n",
+      "Looked at: 4096000/14125634 samples. | Loss: 0.39616 | Acc: 80.78%\n",
+      "Looked at: 6144000/14125634 samples. | Loss: 0.36951 | Acc: 80.78%\n",
+      "Looked at: 8192000/14125634 samples. | Loss: 0.36890 | Acc: 81.09%\n",
+      "Looked at: 10240000/14125634 samples. | Loss: 0.41490 | Acc: 75.94%\n",
+      "Looked at: 12288000/14125634 samples. | Loss: 0.41379 | Acc: 76.09%\n",
+      "\n",
+      "Average Train Loss in Epoch 21: 0.3675\n",
+      "\n",
+      "Average Test Loss in Epoch 21: 0.3672 | Test Accuracy: 81.37%\n",
+      "\n",
+      "\n",
+      "\n",
+      "Epoch: 22\n",
+      "Looked at: 0/14125634 samples. | Loss: 0.37043 | Acc: 80.31%\n",
+      "Looked at: 2048000/14125634 samples. | Loss: 0.36479 | Acc: 82.81%\n",
+      "Looked at: 4096000/14125634 samples. | Loss: 0.35850 | Acc: 81.25%\n",
+      "Looked at: 6144000/14125634 samples. | Loss: 0.36957 | Acc: 82.19%\n",
+      "Looked at: 8192000/14125634 samples. | Loss: 0.37066 | Acc: 81.41%\n",
+      "Looked at: 10240000/14125634 samples. | Loss: 0.37389 | Acc: 80.47%\n",
+      "Looked at: 12288000/14125634 samples. | Loss: 0.34716 | Acc: 82.81%\n",
+      "\n",
+      "Average Train Loss in Epoch 22: 0.3674\n",
+      "\n",
+      "Average Test Loss in Epoch 22: 0.3671 | Test Accuracy: 81.38%\n",
+      "\n",
+      "\n",
+      "\n",
+      "Epoch: 23\n",
+      "Looked at: 0/14125634 samples. | Loss: 0.34697 | Acc: 82.66%\n",
+      "Looked at: 2048000/14125634 samples. | Loss: 0.36754 | Acc: 79.22%\n",
+      "Looked at: 4096000/14125634 samples. | Loss: 0.36347 | Acc: 82.81%\n",
+      "Looked at: 6144000/14125634 samples. | Loss: 0.36795 | Acc: 81.56%\n",
+      "Looked at: 8192000/14125634 samples. | Loss: 0.35920 | Acc: 82.34%\n",
+      "Looked at: 10240000/14125634 samples. | Loss: 0.37139 | Acc: 79.06%\n",
+      "Looked at: 12288000/14125634 samples. | Loss: 0.34670 | Acc: 84.53%\n",
+      "\n",
+      "Average Train Loss in Epoch 23: 0.3673\n",
+      "\n",
+      "Average Test Loss in Epoch 23: 0.3671 | Test Accuracy: 81.37%\n",
+      "\n",
+      "\n",
+      "\n",
+      "Epoch: 24\n",
+      "Looked at: 0/14125634 samples. | Loss: 0.37204 | Acc: 82.34%\n",
+      "Looked at: 2048000/14125634 samples. | Loss: 0.37105 | Acc: 81.72%\n",
+      "Looked at: 4096000/14125634 samples. | Loss: 0.34025 | Acc: 82.81%\n",
+      "Looked at: 6144000/14125634 samples. | Loss: 0.34512 | Acc: 82.03%\n",
+      "Looked at: 8192000/14125634 samples. | Loss: 0.38700 | Acc: 81.56%\n",
+      "Looked at: 10240000/14125634 samples. | Loss: 0.39688 | Acc: 78.28%\n",
+      "Looked at: 12288000/14125634 samples. | Loss: 0.37953 | Acc: 81.72%\n",
+      "\n",
+      "Average Train Loss in Epoch 24: 0.3672\n",
+      "\n",
+      "Average Test Loss in Epoch 24: 0.3670 | Test Accuracy: 81.38%\n",
+      "\n",
+      "\n",
+      "\n",
+      "Epoch: 25\n",
+      "Looked at: 0/14125634 samples. | Loss: 0.35158 | Acc: 82.81%\n",
+      "Looked at: 2048000/14125634 samples. | Loss: 0.36911 | Acc: 80.78%\n",
+      "Looked at: 4096000/14125634 samples. | Loss: 0.37169 | Acc: 80.94%\n",
+      "Looked at: 6144000/14125634 samples. | Loss: 0.38531 | Acc: 79.84%\n",
+      "Looked at: 8192000/14125634 samples. | Loss: 0.33342 | Acc: 83.44%\n",
+      "Looked at: 10240000/14125634 samples. | Loss: 0.36133 | Acc: 83.28%\n",
+      "Looked at: 12288000/14125634 samples. | Loss: 0.37073 | Acc: 82.34%\n",
+      "\n",
+      "Average Train Loss in Epoch 25: 0.3671\n",
+      "\n",
+      "Average Test Loss in Epoch 25: 0.3669 | Test Accuracy: 81.39%\n",
+      "\n",
+      "\n",
+      "\n",
+      "Epoch: 26\n",
+      "Looked at: 0/14125634 samples. | Loss: 0.38048 | Acc: 80.62%\n",
+      "Looked at: 2048000/14125634 samples. | Loss: 0.35437 | Acc: 82.97%\n",
+      "Looked at: 4096000/14125634 samples. | Loss: 0.38018 | Acc: 82.66%\n",
+      "Looked at: 6144000/14125634 samples. | Loss: 0.33758 | Acc: 84.69%\n",
+      "Looked at: 8192000/14125634 samples. | Loss: 0.37496 | Acc: 80.31%\n",
+      "Looked at: 10240000/14125634 samples. | Loss: 0.38321 | Acc: 79.84%\n",
+      "Looked at: 12288000/14125634 samples. | Loss: 0.39056 | Acc: 78.75%\n",
+      "\n",
+      "Average Train Loss in Epoch 26: 0.3671\n",
+      "\n",
+      "Average Test Loss in Epoch 26: 0.3669 | Test Accuracy: 81.38%\n",
+      "\n",
+      "\n",
+      "\n",
+      "Epoch: 27\n",
+      "Looked at: 0/14125634 samples. | Loss: 0.36476 | Acc: 79.84%\n",
+      "Looked at: 2048000/14125634 samples. | Loss: 0.40334 | Acc: 80.78%\n",
+      "Looked at: 4096000/14125634 samples. | Loss: 0.35593 | Acc: 81.56%\n",
+      "Looked at: 6144000/14125634 samples. | Loss: 0.37628 | Acc: 79.38%\n",
+      "Looked at: 8192000/14125634 samples. | Loss: 0.38541 | Acc: 79.06%\n",
+      "Looked at: 10240000/14125634 samples. | Loss: 0.36293 | Acc: 80.94%\n",
+      "Looked at: 12288000/14125634 samples. | Loss: 0.37281 | Acc: 80.00%\n",
+      "\n",
+      "Average Train Loss in Epoch 27: 0.3670\n",
+      "\n",
+      "Average Test Loss in Epoch 27: 0.3667 | Test Accuracy: 81.40%\n",
+      "\n",
+      "\n",
+      "\n",
+      "Epoch: 28\n",
+      "Looked at: 0/14125634 samples. | Loss: 0.33920 | Acc: 84.06%\n",
+      "Looked at: 2048000/14125634 samples. | Loss: 0.39577 | Acc: 78.59%\n",
+      "Looked at: 4096000/14125634 samples. | Loss: 0.36553 | Acc: 81.09%\n",
+      "Looked at: 6144000/14125634 samples. | Loss: 0.33766 | Acc: 84.69%\n",
+      "Looked at: 8192000/14125634 samples. | Loss: 0.37899 | Acc: 79.53%\n",
+      "Looked at: 10240000/14125634 samples. | Loss: 0.37286 | Acc: 82.03%\n",
+      "Looked at: 12288000/14125634 samples. | Loss: 0.32662 | Acc: 83.75%\n",
+      "\n",
+      "Average Train Loss in Epoch 28: 0.3669\n",
+      "\n",
+      "Average Test Loss in Epoch 28: 0.3667 | Test Accuracy: 81.40%\n",
+      "\n",
+      "\n",
+      "\n",
+      "Epoch: 29\n",
+      "Looked at: 0/14125634 samples. | Loss: 0.40149 | Acc: 80.00%\n",
+      "Looked at: 2048000/14125634 samples. | Loss: 0.35815 | Acc: 82.34%\n",
+      "Looked at: 4096000/14125634 samples. | Loss: 0.35634 | Acc: 81.25%\n",
+      "Looked at: 6144000/14125634 samples. | Loss: 0.36286 | Acc: 80.16%\n",
+      "Looked at: 8192000/14125634 samples. | Loss: 0.38114 | Acc: 79.53%\n",
+      "Looked at: 10240000/14125634 samples. | Loss: 0.37161 | Acc: 80.47%\n",
+      "Looked at: 12288000/14125634 samples. | Loss: 0.36749 | Acc: 82.97%\n",
+      "\n",
+      "Average Train Loss in Epoch 29: 0.3668\n",
+      "\n",
+      "Average Test Loss in Epoch 29: 0.3666 | Test Accuracy: 81.41%\n",
+      "\n",
+      "\n",
+      "\n",
+      "Epoch: 30\n",
+      "Looked at: 0/14125634 samples. | Loss: 0.36972 | Acc: 82.19%\n",
+      "Looked at: 2048000/14125634 samples. | Loss: 0.34223 | Acc: 82.03%\n",
+      "Looked at: 4096000/14125634 samples. | Loss: 0.37342 | Acc: 79.69%\n",
+      "Looked at: 6144000/14125634 samples. | Loss: 0.37640 | Acc: 80.62%\n",
+      "Looked at: 8192000/14125634 samples. | Loss: 0.37765 | Acc: 79.38%\n",
+      "Looked at: 10240000/14125634 samples. | Loss: 0.37371 | Acc: 82.34%\n",
+      "Looked at: 12288000/14125634 samples. | Loss: 0.36719 | Acc: 80.78%\n",
+      "\n",
+      "Average Train Loss in Epoch 30: 0.3668\n",
+      "\n",
+      "Average Test Loss in Epoch 30: 0.3666 | Test Accuracy: 81.41%\n",
+      "\n",
+      "\n",
+      "\n",
+      "Epoch: 31\n",
+      "Looked at: 0/14125634 samples. | Loss: 0.36959 | Acc: 81.25%\n",
+      "Looked at: 2048000/14125634 samples. | Loss: 0.37810 | Acc: 79.22%\n",
+      "Looked at: 4096000/14125634 samples. | Loss: 0.35175 | Acc: 82.81%\n",
+      "Looked at: 6144000/14125634 samples. | Loss: 0.35616 | Acc: 82.97%\n",
+      "Looked at: 8192000/14125634 samples. | Loss: 0.37253 | Acc: 81.72%\n",
+      "Looked at: 10240000/14125634 samples. | Loss: 0.38863 | Acc: 78.44%\n",
+      "Looked at: 12288000/14125634 samples. | Loss: 0.36732 | Acc: 80.47%\n",
+      "\n",
+      "Average Train Loss in Epoch 31: 0.3667\n",
+      "\n",
+      "Average Test Loss in Epoch 31: 0.3664 | Test Accuracy: 81.42%\n",
+      "\n",
+      "\n",
+      "\n",
+      "Epoch: 32\n",
+      "Looked at: 0/14125634 samples. | Loss: 0.38633 | Acc: 80.31%\n",
+      "Looked at: 2048000/14125634 samples. | Loss: 0.37595 | Acc: 80.94%\n",
+      "Looked at: 4096000/14125634 samples. | Loss: 0.36916 | Acc: 81.56%\n",
+      "Looked at: 6144000/14125634 samples. | Loss: 0.35417 | Acc: 82.66%\n",
+      "Looked at: 8192000/14125634 samples. | Loss: 0.38338 | Acc: 79.38%\n",
+      "Looked at: 10240000/14125634 samples. | Loss: 0.34969 | Acc: 82.50%\n",
+      "Looked at: 12288000/14125634 samples. | Loss: 0.37684 | Acc: 79.22%\n",
+      "\n",
+      "Average Train Loss in Epoch 32: 0.3666\n",
+      "\n",
+      "Average Test Loss in Epoch 32: 0.3664 | Test Accuracy: 81.42%\n",
+      "\n",
+      "\n",
+      "\n",
+      "Epoch: 33\n",
+      "Looked at: 0/14125634 samples. | Loss: 0.33151 | Acc: 83.91%\n",
+      "Looked at: 2048000/14125634 samples. | Loss: 0.35243 | Acc: 83.44%\n",
+      "Looked at: 4096000/14125634 samples. | Loss: 0.40070 | Acc: 80.31%\n",
+      "Looked at: 6144000/14125634 samples. | Loss: 0.36696 | Acc: 80.47%\n",
+      "Looked at: 8192000/14125634 samples. | Loss: 0.37117 | Acc: 80.94%\n",
+      "Looked at: 10240000/14125634 samples. | Loss: 0.36802 | Acc: 81.72%\n",
+      "Looked at: 12288000/14125634 samples. | Loss: 0.37105 | Acc: 82.03%\n",
+      "\n",
+      "Average Train Loss in Epoch 33: 0.3665\n",
+      "\n",
+      "Average Test Loss in Epoch 33: 0.3663 | Test Accuracy: 81.43%\n",
+      "\n",
+      "\n",
+      "\n",
+      "Epoch: 34\n",
+      "Looked at: 0/14125634 samples. | Loss: 0.36644 | Acc: 80.31%\n",
+      "Looked at: 2048000/14125634 samples. | Loss: 0.37906 | Acc: 81.25%\n",
+      "Looked at: 4096000/14125634 samples. | Loss: 0.41937 | Acc: 77.50%\n",
+      "Looked at: 6144000/14125634 samples. | Loss: 0.33292 | Acc: 83.75%\n",
+      "Looked at: 8192000/14125634 samples. | Loss: 0.35917 | Acc: 81.25%\n",
+      "Looked at: 10240000/14125634 samples. | Loss: 0.39603 | Acc: 79.69%\n",
+      "Looked at: 12288000/14125634 samples. | Loss: 0.35040 | Acc: 83.12%\n",
+      "\n",
+      "Average Train Loss in Epoch 34: 0.3664\n",
+      "\n",
+      "Average Test Loss in Epoch 34: 0.3662 | Test Accuracy: 81.44%\n",
+      "\n",
+      "\n",
+      "\n",
+      "Epoch: 35\n",
+      "Looked at: 0/14125634 samples. | Loss: 0.34261 | Acc: 83.28%\n",
+      "Looked at: 2048000/14125634 samples. | Loss: 0.38081 | Acc: 80.78%\n",
+      "Looked at: 4096000/14125634 samples. | Loss: 0.35652 | Acc: 81.56%\n",
+      "Looked at: 6144000/14125634 samples. | Loss: 0.37765 | Acc: 81.88%\n",
+      "Looked at: 8192000/14125634 samples. | Loss: 0.37416 | Acc: 81.41%\n",
+      "Looked at: 10240000/14125634 samples. | Loss: 0.39667 | Acc: 78.59%\n",
+      "Looked at: 12288000/14125634 samples. | Loss: 0.36175 | Acc: 82.34%\n",
+      "\n",
+      "Average Train Loss in Epoch 35: 0.3664\n",
+      "\n",
+      "Average Test Loss in Epoch 35: 0.3661 | Test Accuracy: 81.44%\n",
+      "\n",
+      "\n",
+      "\n",
+      "Epoch: 36\n",
+      "Looked at: 0/14125634 samples. | Loss: 0.40982 | Acc: 78.75%\n",
+      "Looked at: 2048000/14125634 samples. | Loss: 0.35975 | Acc: 80.78%\n",
+      "Looked at: 4096000/14125634 samples. | Loss: 0.36340 | Acc: 81.56%\n",
+      "Looked at: 6144000/14125634 samples. | Loss: 0.35415 | Acc: 82.50%\n",
+      "Looked at: 8192000/14125634 samples. | Loss: 0.34633 | Acc: 82.03%\n",
+      "Looked at: 10240000/14125634 samples. | Loss: 0.37513 | Acc: 80.62%\n",
+      "Looked at: 12288000/14125634 samples. | Loss: 0.37116 | Acc: 79.69%\n",
+      "\n",
+      "Average Train Loss in Epoch 36: 0.3663\n",
+      "\n",
+      "Average Test Loss in Epoch 36: 0.3660 | Test Accuracy: 81.45%\n",
+      "\n",
+      "\n",
+      "\n",
+      "Epoch: 37\n",
+      "Looked at: 0/14125634 samples. | Loss: 0.35815 | Acc: 81.41%\n",
+      "Looked at: 2048000/14125634 samples. | Loss: 0.37062 | Acc: 81.56%\n",
+      "Looked at: 4096000/14125634 samples. | Loss: 0.36992 | Acc: 80.78%\n",
+      "Looked at: 6144000/14125634 samples. | Loss: 0.36826 | Acc: 80.31%\n",
+      "Looked at: 8192000/14125634 samples. | Loss: 0.35365 | Acc: 82.97%\n",
+      "Looked at: 10240000/14125634 samples. | Loss: 0.38225 | Acc: 80.00%\n",
+      "Looked at: 12288000/14125634 samples. | Loss: 0.36522 | Acc: 81.72%\n",
+      "\n",
+      "Average Train Loss in Epoch 37: 0.3662\n",
+      "\n",
+      "Average Test Loss in Epoch 37: 0.3660 | Test Accuracy: 81.46%\n",
+      "\n",
+      "\n",
+      "\n",
+      "Epoch: 38\n",
+      "Looked at: 0/14125634 samples. | Loss: 0.37059 | Acc: 80.94%\n",
+      "Looked at: 2048000/14125634 samples. | Loss: 0.36485 | Acc: 81.56%\n",
+      "Looked at: 4096000/14125634 samples. | Loss: 0.32735 | Acc: 84.06%\n",
+      "Looked at: 6144000/14125634 samples. | Loss: 0.35543 | Acc: 82.19%\n",
+      "Looked at: 8192000/14125634 samples. | Loss: 0.35705 | Acc: 81.88%\n",
+      "Looked at: 10240000/14125634 samples. | Loss: 0.37144 | Acc: 82.03%\n",
+      "Looked at: 12288000/14125634 samples. | Loss: 0.39804 | Acc: 79.69%\n",
+      "\n",
+      "Average Train Loss in Epoch 38: 0.3661\n",
+      "\n",
+      "Average Test Loss in Epoch 38: 0.3659 | Test Accuracy: 81.48%\n",
+      "\n",
+      "\n",
+      "\n",
+      "Epoch: 39\n",
+      "Looked at: 0/14125634 samples. | Loss: 0.38041 | Acc: 79.38%\n",
+      "Looked at: 2048000/14125634 samples. | Loss: 0.35889 | Acc: 81.72%\n",
+      "Looked at: 4096000/14125634 samples. | Loss: 0.36664 | Acc: 82.81%\n",
+      "Looked at: 6144000/14125634 samples. | Loss: 0.36892 | Acc: 80.47%\n",
+      "Looked at: 8192000/14125634 samples. | Loss: 0.34949 | Acc: 81.56%\n",
+      "Looked at: 10240000/14125634 samples. | Loss: 0.36861 | Acc: 82.81%\n",
+      "Looked at: 12288000/14125634 samples. | Loss: 0.36306 | Acc: 81.41%\n",
+      "\n",
+      "Average Train Loss in Epoch 39: 0.3660\n",
+      "\n",
+      "Average Test Loss in Epoch 39: 0.3660 | Test Accuracy: 81.47%\n",
+      "\n",
+      "\n",
+      "\n",
+      "Epoch: 40\n",
+      "Looked at: 0/14125634 samples. | Loss: 0.36633 | Acc: 80.78%\n",
+      "Looked at: 2048000/14125634 samples. | Loss: 0.33380 | Acc: 83.12%\n",
+      "Looked at: 4096000/14125634 samples. | Loss: 0.35927 | Acc: 81.25%\n",
+      "Looked at: 6144000/14125634 samples. | Loss: 0.32863 | Acc: 83.12%\n",
+      "Looked at: 8192000/14125634 samples. | Loss: 0.35964 | Acc: 82.03%\n",
+      "Looked at: 10240000/14125634 samples. | Loss: 0.41060 | Acc: 79.69%\n",
+      "Looked at: 12288000/14125634 samples. | Loss: 0.37140 | Acc: 80.31%\n",
+      "\n",
+      "Average Train Loss in Epoch 40: 0.3660\n",
+      "\n",
+      "Average Test Loss in Epoch 40: 0.3657 | Test Accuracy: 81.48%\n"
+     ]
+    }
+   ],
+   "source": [
+    "epochs = 41\n",
+    "# Building training and evaluation loop\n",
+    "for epoch in range(epochs):\n",
+    "\n",
+    "    if epoch % 1 == 0:\n",
+    "        print(f\"\\n\\n\\nEpoch: {epoch}\")\n",
+    "    \n",
+    "    ###TRAINING\n",
+    "    model_1.train()\n",
+    "    train_loss = 0\n",
+    "\n",
+    "    # Add a loop to loop through training batches\n",
+    "    for batch, (X, y) in enumerate(train_loader):\n",
+    "        X, y = X.to(device), y.to(device)\n",
+    "    \n",
+    "        model_1.train()\n",
+    "    \n",
+    "        # 1.forward pass\n",
+    "        y_logits = model_1(X).squeeze()\n",
+    "        y_pred = torch.round(torch.sigmoid(y_logits))\n",
+    "    \n",
+    "        # 2.Calculate the loss\n",
+    "        loss = loss_fn(y_logits, y)\n",
+    "        train_loss += loss  #accumalates training loss\n",
+    "        acc = accuracy_fn(y_true=y,\n",
+    "                          y_pred=y_pred)\n",
+    "        \n",
+    "        # 3.optimizer zero grad\n",
+    "        optimizer.zero_grad()\n",
+    "    \n",
+    "        # 4.Loss Backward (backpropagation)\n",
+    "        loss.backward()\n",
+    "    \n",
+    "        # 5.optimizer step step step(gradient descent)\n",
+    "        optimizer.step()\n",
+    "\n",
+    "        if batch % 3200 == 0 and epoch % 1 == 0:\n",
+    "            print(f'Looked at: {batch * 640}/{len(train_loader.dataset)} samples. | Loss: {loss:.5f} | Acc: {acc:.2f}%')\n",
+    "\n",
+    "    # Divide total train loss by length of train dataloader\n",
+    "    train_loss /= len(train_loader)\n",
+    "    if epoch % 1 == 0:\n",
+    "        print(f\"\\nAverage Train Loss in Epoch {epoch}: {train_loss:.4f}\")\n",
+    "\n",
+    "    \n",
+    "    ### EVALUATION\n",
+    "    model_1.eval()  # Ensure model is in evaluation mode\n",
+    "    test_loss = 0\n",
+    "    test_acc = 0\n",
+    "\n",
+    "    with torch.inference_mode():  # No need to compute gradients\n",
+    "        for X, y in test_loader:\n",
+    "            X, y = X.to(device), y.to(device)\n",
+    "\n",
+    "            # Forward pass\n",
+    "            y_logits = model_1(X).squeeze()\n",
+    "            y_pred = torch.round(torch.sigmoid(y_logits))\n",
+    "\n",
+    "            # Calculate the loss\n",
+    "            loss = loss_fn(y_logits, y)\n",
+    "            test_loss += loss.item()  # Accumulate test loss\n",
+    "            acc = accuracy_fn(y_true=y, y_pred=y_pred)\n",
+    "            test_acc += acc\n",
+    "\n",
+    "    # Average test loss and accuracy\n",
+    "    test_loss /= len(test_loader)\n",
+    "    test_acc /= len(test_loader)\n",
+    "    print(f\"\\nAverage Test Loss in Epoch {epoch}: {test_loss:.4f} | Test Accuracy: {test_acc:.2f}%\")"
+   ]
+  },
+  {
+   "cell_type": "code",
+   "execution_count": 36,
+   "id": "e569435e",
+   "metadata": {
+    "execution": {
+     "iopub.execute_input": "2024-07-29T20:10:05.943564Z",
+     "iopub.status.busy": "2024-07-29T20:10:05.943213Z",
+     "iopub.status.idle": "2024-07-29T20:10:06.335531Z",
+     "shell.execute_reply": "2024-07-29T20:10:06.334593Z"
+    },
+    "papermill": {
+     "duration": 0.439655,
+     "end_time": "2024-07-29T20:10:06.338175",
+     "exception": false,
+     "start_time": "2024-07-29T20:10:05.898520",
+     "status": "completed"
+    },
+    "tags": []
+   },
+   "outputs": [
+    {
+     "name": "stdout",
+     "output_type": "stream",
+     "text": [
+      "tensor([[-1.6868],\n",
+      "        [ 0.4347],\n",
+      "        [ 0.5080],\n",
+      "        [-9.0323],\n",
+      "        [-0.7732],\n",
+      "        [-8.3236],\n",
+      "        [-0.0770],\n",
+      "        [-8.3077],\n",
+      "        [-7.9781],\n",
+      "        [-8.4047]], device='cuda:0')\n",
+      "tensor([[1.5620e-01],\n",
+      "        [6.0699e-01],\n",
+      "        [6.2434e-01],\n",
+      "        [1.1947e-04],\n",
+      "        [3.1578e-01],\n",
+      "        [2.4266e-04],\n",
+      "        [4.8075e-01],\n",
+      "        [2.4656e-04],\n",
+      "        [3.4277e-04],\n",
+      "        [2.2376e-04]], device='cuda:0')\n",
+      "tensor([[-1.4977,  0.0426,  1.6876, -0.5989, -1.6731,  1.0214,  0.8261, -1.5387,\n",
+      "         -1.1574,  1.5619, -0.1870, -0.9559],\n",
+      "        [ 0.5005,  0.0426,  0.1151, -0.5989,  0.3772,  0.3770, -0.4948,  0.6499,\n",
+      "          0.8640, -0.6402, -0.1870,  1.0462],\n",
+      "        [ 0.5005,  0.0426,  1.3566, -0.5989, -1.6731, -1.3771,  1.3671,  0.6499,\n",
+      "          0.8640, -0.6402, -0.1870,  1.0462],\n",
+      "        [-1.3496,  0.0426,  1.6876,  1.6698, -0.3864,  0.8782, -0.5954, -1.5387,\n",
+      "         -1.1574,  1.5619, -0.1870, -0.9559],\n",
+      "        [ 0.7965,  0.0426, -0.6298, -0.5989,  0.1791,  0.3770, -0.1803, -1.5387,\n",
+      "          0.8640, -0.6402, -0.1870,  1.0462],\n",
+      "        [-1.3496,  0.0426,  0.2806,  1.6698, -0.3151,  0.8782,  1.0400, -1.5387,\n",
+      "         -1.1574,  1.5619, -0.1870,  1.0462],\n",
+      "        [-1.2756,  0.0426, -0.5470, -0.5989, -1.6731,  0.8782, -1.9038,  0.6499,\n",
+      "         -1.1574,  1.5619, -0.1870, -0.9559],\n",
+      "        [-1.4236,  0.0426,  0.8600,  1.6698, -1.6731,  1.0214,  0.1091,  0.6499,\n",
+      "         -1.1574,  1.5619, -0.1870, -0.9559],\n",
+      "        [ 2.3506,  0.0426,  1.3566,  1.6698,  0.4367,  0.3770, -0.8219, -1.5387,\n",
+      "          0.8640, -0.6402, -0.1870,  1.0462],\n",
+      "        [-0.5356,  0.0426,  0.1151,  1.6698,  0.9334,  0.8782, -1.1364, -1.5387,\n",
+      "         -1.1574,  1.5619, -0.1870,  1.0462]])\n"
+     ]
+    }
+   ],
+   "source": [
+    "# Make prediction\n",
+    "model_1.eval()\n",
+    "with torch.inference_mode():\n",
+    "    y_logits = model_1(X_for_preds_tensor.to(device))\n",
+    "    \n",
+    "print(y_logits[:10])\n",
+    "y_pred_probs = torch.sigmoid(y_logits)\n",
+    "print(y_pred_probs[:10])\n",
+    "print(X_for_preds_tensor[:10])"
+   ]
+  },
+  {
+   "cell_type": "markdown",
+   "id": "23e8bd50",
+   "metadata": {
+    "papermill": {
+     "duration": 0.042823,
+     "end_time": "2024-07-29T20:10:06.424285",
+     "exception": false,
+     "start_time": "2024-07-29T20:10:06.381462",
+     "status": "completed"
+    },
+    "tags": []
+   },
+   "source": [
+    "# # SETTING PRECISION"
+   ]
+  },
+  {
+   "cell_type": "code",
+   "execution_count": 37,
+   "id": "68cf1c7c",
+   "metadata": {
+    "execution": {
+     "iopub.execute_input": "2024-07-29T20:10:06.511460Z",
+     "iopub.status.busy": "2024-07-29T20:10:06.511094Z",
+     "iopub.status.idle": "2024-07-29T20:10:06.559344Z",
+     "shell.execute_reply": "2024-07-29T20:10:06.558319Z"
+    },
+    "papermill": {
+     "duration": 0.094379,
+     "end_time": "2024-07-29T20:10:06.561740",
+     "exception": false,
+     "start_time": "2024-07-29T20:10:06.467361",
+     "status": "completed"
+    },
+    "tags": []
+   },
+   "outputs": [],
+   "source": [
+    "np.set_printoptions(precision=10, suppress=False)\n",
+    "y_pred_probs_numpy = y_pred_probs.cpu().numpy().astype(np.float64)\n"
+   ]
+  },
+  {
+   "cell_type": "code",
+   "execution_count": 38,
+   "id": "993537c4",
+   "metadata": {
+    "execution": {
+     "iopub.execute_input": "2024-07-29T20:10:06.650040Z",
+     "iopub.status.busy": "2024-07-29T20:10:06.649722Z",
+     "iopub.status.idle": "2024-07-29T20:10:06.675452Z",
+     "shell.execute_reply": "2024-07-29T20:10:06.674560Z"
+    },
+    "papermill": {
+     "duration": 0.071766,
+     "end_time": "2024-07-29T20:10:06.677470",
+     "exception": false,
+     "start_time": "2024-07-29T20:10:06.605704",
+     "status": "completed"
+    },
+    "tags": []
+   },
+   "outputs": [],
+   "source": [
+    "y_pred_probs_flat = y_pred_probs_numpy.flatten()"
+   ]
+  },
+  {
+   "cell_type": "code",
+   "execution_count": 39,
+   "id": "5982e548",
+   "metadata": {
+    "execution": {
+     "iopub.execute_input": "2024-07-29T20:10:06.764467Z",
+     "iopub.status.busy": "2024-07-29T20:10:06.764156Z",
+     "iopub.status.idle": "2024-07-29T20:10:33.741644Z",
+     "shell.execute_reply": "2024-07-29T20:10:33.740499Z"
+    },
+    "papermill": {
+     "duration": 27.023846,
+     "end_time": "2024-07-29T20:10:33.744303",
+     "exception": false,
+     "start_time": "2024-07-29T20:10:06.720457",
+     "status": "completed"
+    },
+    "tags": []
+   },
+   "outputs": [
+    {
+     "name": "stdout",
+     "output_type": "stream",
+     "text": [
+      "Saved successfully!\n"
+     ]
+    }
+   ],
+   "source": [
+    "# Create the submission DataFrame\n",
+    "submission_df = pd.DataFrame({'id': df_test['id'], 'Response': y_pred_probs_flat})\n",
+    "\n",
+    "# Save to CSV\n",
+    "submission_df.to_csv('submission.csv', index=False, float_format='%.6f')\n",
+    "print('Saved successfully!')"
+   ]
+  },
+  {
+   "cell_type": "code",
+   "execution_count": null,
+   "id": "3b5c8b0d",
+   "metadata": {
+    "papermill": {
+     "duration": 0.042863,
+     "end_time": "2024-07-29T20:10:33.831294",
+     "exception": false,
+     "start_time": "2024-07-29T20:10:33.788431",
+     "status": "completed"
+    },
+    "tags": []
+   },
+   "outputs": [],
+   "source": []
+  }
+ ],
+ "metadata": {
+  "kaggle": {
+   "accelerator": "gpu",
+   "dataSources": [
+    {
+     "databundleVersionId": 8930475,
+     "sourceId": 73291,
+     "sourceType": "competition"
+    }
+   ],
+   "dockerImageVersionId": 30747,
+   "isGpuEnabled": true,
+   "isInternetEnabled": true,
+   "language": "python",
+   "sourceType": "notebook"
+  },
+  "kernelspec": {
+   "display_name": "Python 3",
+   "language": "python",
+   "name": "python3"
+  },
+  "language_info": {
+   "codemirror_mode": {
+    "name": "ipython",
+    "version": 3
+   },
+   "file_extension": ".py",
+   "mimetype": "text/x-python",
+   "name": "python",
+   "nbconvert_exporter": "python",
+   "pygments_lexer": "ipython3",
+   "version": "3.10.13"
+  },
+  "papermill": {
+   "default_parameters": {},
+   "duration": 5937.643379,
+   "end_time": "2024-07-29T20:10:36.706271",
+   "environment_variables": {},
+   "exception": null,
+   "input_path": "__notebook__.ipynb",
+   "output_path": "__notebook__.ipynb",
+   "parameters": {},
+   "start_time": "2024-07-29T18:31:39.062892",
+   "version": "2.5.0"
+  }
+ },
+ "nbformat": 4,
+ "nbformat_minor": 5
+}
